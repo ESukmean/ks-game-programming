@@ -4,8 +4,13 @@
 #include <algorithm>
 #include <stdio.h>
 #include <termios.h>
+#include <wchar.h>
+#include <time.h>
 
-class frame;
+
+class Frame;
+class Component;
+class Screen;
 class Game;
 class ringbuffer;
 
@@ -13,12 +18,13 @@ const int NORMAL = 0;
 const int NOOP = 10;
 const int TERMINATE = -10;
 
-class frame {
-private:
-	unsigned char* framebuffer; // utf8 고려 한 글자당 3byte 고정
+const int WIDTH = 189;
+const int HEIGHT = 50;
+
+class Frame {
 public:
-	int process(Game*);
-	void render(Game*);
+	virtual int process(Game*) {}
+	virtual void render(Game*) {}
 };
 class ringbuffer {
 	private:
@@ -137,16 +143,99 @@ class ringbuffer {
 		}
 };
 
-class screen_opening : public frame {
+class Screen {
+public:
+	wchar_t* framebuffer; // multi-byte 문자열 고려
+	Screen() {
+		this->framebuffer = new wchar_t[WIDTH * HEIGHT];
+		clear();
+	}
+	~Screen() {
+		delete[] this->framebuffer;
+	}
+
+	void clear(int x, int y, int width, int height) {
+		for (int h = 0; h < height; h++) {
+			for (int w = 0; w < width; w++) {
+				framebuffer[(h + y) * WIDTH + w + x] = *L" ";
+			}
+		}
+	}
+	void clear() { 
+		clear(0, 0, WIDTH, HEIGHT);
+	}
+
+	void fill(int x, int y, int length, wchar_t* src) {
+		for (int w = 0; w < length; w++) {
+			this->framebuffer[(WIDTH * y) + w + x] = src[w];
+		}
+	}
+
+	virtual int process(Game* state) {
+
+	}
+	virtual void render(Game* state) {
+		printf("\033[H\033[2J\033[3J\033[0;0H");
+		for (int h = 0; h < 24; h++) {
+			printf("%.*S\n", 180, this->framebuffer + (WIDTH * h));
+		}
+	}
+};
+class Component : public Frame {
+	protected:
+		int x, y;
+		int width, height;
+
+	public:
+		Component(int x, int y, int width, int height) {
+			this->x = x;
+			this->y = y;
+			this->width = width;
+			this->height = height;
+		}
+		virtual int process(Screen* scrn) {}
+		virtual void render(Screen* scrn) {}
+};
+class component_header : public Component {
+	private:
+		int tick = 5;
+		int reverse = 0;
+
+		wchar_t* header = L"             /@@@@@@/             @@@@@&%/           #@@@@@@@@@@@&#/*.                  .@@@@@@@@@@@@@@@@@@@@@&#                @@@@@@%.           @@@@@%#                \n            &@@@@@@@@             @@@@@@@*           &@@@@@@@@@@@@@@@@@@@@@                    .@@@@@@@@@@@@@@@/              ,@@@@@@@@,          .@@@@@@@                \n           @@@@@@@@%              @@@@@@@            @@@@@@@#      /@@@@@@@                   (@@@@@@@@                      #@@@@@@@@            (@@@@@@@                \n         .@@@@@@@@,    .@%*      ,@@@@@@@            @@@@@@@*      %@@@@@@@                  @@@@@@@@@                      @@@@@@@@@             &@@@@@@@                \n        (@@@@@@@@@@@.  &@@@@@@@@@@@@@@@@@            @@@@@@@.      &@@@@@@%                 @@@@@@@@@@@.                   @@@@@@@@@@@%           @@@@@@@@@@@@@@@@        \n       @@@@@@@@@@@@@@@@#         @@@@@@@@           ,@@@@@@@       @@@@@@@/               ,@@@@@@@@@@@@@@@/              ,@@@@@@@@(@@@@@@@        @@@@@@@, .,*#@@@        \n      @@@@@@@@#    /@@@@@@@      @@@@@@@#           #@@@@@@@       @@@@@@@,              #@@@@@@@@    (@@@@@@@          %@@@@@@@@     @@@@@@@,    @@@@@@@.                \n    ,@@@@@@@@,        .@@@@@     @@@@@@@,           &@@@@@@@%@@@@@@@@@@@@@              @@@@@@@@@        ,@@@@@/       @@@@@@@@&         %@@@@,  ,@@@@@@@                 \n     .%@@@@@                     @@@@@@@            @@@@@@@@@@@@@@%#(.                  /@@@@@@#@@@@@@@*                (@@@@@/                  #@@@@@@@                 \n                        @@&(,,   %%&&@@@                       ..,,*/%&@@@@@                    @@@@@@@                                          /%%&@@@&                 \n                        @@@@@@@@@@@@@@@@@@@@,      (@@@@@@@@@@@@@@@@@@@@@@@@.                  ,@@@@@@@&@@@@@@@@                                                          \n                                     @@@@@@@.               @@@@@@@                    .@@@@@@@@@@@@@@@@@@@@@@@@*                                                         \n                                    ,@@@@@@@         &&#/. (@@@@@@@                                                                                                       \n                        *@@@@@@@@@@@@@@@@@@@        ,@@@@@@@                                                                                                              \n                        %@@@@@@@     ..,,***        #@@@@@@@                                                                                                              \n                        @@@@@@@@                    &@@@@@@&                                                                                                              \n                        @@@@@@@#/%@@@@@@@@@@@@.     @@@@@@@(     .,,*//(%&(                                                                                               \n                        @@@@@@@@@@@@@@&%%/.         @@@@@@@@@@@@@@@@@@@@@@@                                                                                               \n                                                                                                                                                                          \n                                                                                                                                                                          \n                                                                                                                                                                          \n";
+
+	public:
+		component_header(int x, int y, int width, int height) : Component(x, y, width, height) {}
+		int process(Screen* scrn) {
+			if (reverse == 0) {
+				tick -= 1;
+			} else {
+				tick += 1;
+			}
+
+			if (tick % 10 == 0) { this->reverse = !(this->reverse); }
+		}
+		void render(Screen* scrn) {
+			int pos_y = tick / 2;
+			scrn->clear(0, 0, 170, 24);
+			for (int h = 0; h < 24; h++) {
+				scrn->fill(0, h + pos_y, 170, header + (170 * h));
+			}
+		}
+};
+class screen_opening : public Screen {	
 private:
-	
+	component_header header = component_header(0, 0, 180, 35);
+
 public:
 	int process(Game* state) {
+		this->header.process(this);
 
 	}
 	void render(Game* state) {
-
+		this->header.render(this);
+		Screen::render(state);
 	}
+
 };
 
 class Game {
@@ -154,7 +243,7 @@ private:
 	int lastloop_ts = 0; // input과 process에 의해서 시간 지연이 생길 수 있음. 루프 실행 timestamp를 이용해서 sleep 기간을 보정함.
 	int inputs_len = 0;
 	ringbuffer inputs = ringbuffer(1024); // 비동기로 처리할 것이기도 하고, frame의 전환에서도 입력을 유실하지 않게 따로 input 버퍼를 가지게 함. 이걸로 입력 처리를 해야함
-	frame* current_screen; // 화면 처리의 최대단위. DP의 전략패턴을 이용할 것임. frame 아래에서 직접 다음 screen을 수정할 수도 있음을 주의
+	Screen* current_screen; // 화면 처리의 최대단위. DP의 전략패턴을 이용할 것임. frame 아래에서 직접 다음 screen을 수정할 수도 있음을 주의
 
 	int state = NORMAL; // 현재 게임의 전체상태
 
@@ -200,6 +289,6 @@ int main() {
 		gameInstance.process();
 		gameInstance.render();
 
-		gameInstance.frame_limit(2);
+		gameInstance.frame_limit(7);
 	}
 }
