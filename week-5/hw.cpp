@@ -175,7 +175,7 @@ public:
 
 	}
 	virtual void render(Game* state) {
-		printf("\033[H\033[2J\033[3J\033[0;0H");
+		printf("\033[0;0H");
 		for (int h = 0; h < 24; h++) {
 			printf("%.*S\n", 180, this->framebuffer + (WIDTH * h));
 		}
@@ -289,6 +289,6 @@ int main() {
 		gameInstance.process();
 		gameInstance.render();
 
-		gameInstance.frame_limit(7);
+		gameInstance.frame_limit(10);
 	}
 }
