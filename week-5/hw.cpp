@@ -22,6 +22,10 @@ const int TERMINATE = -10;
 const int WIDTH = 237;
 const int HEIGHT = 63;
 
+static int escape_key(int k) {
+	if (k == -1 || (k & 1792768) != 1792768)  return -1;
+	return k & 255;
+}
 class Frame {
 public:
 	virtual int process(Game*) {}
@@ -148,22 +152,31 @@ class ringbuffer {
 			if (length == 0) return -1;
 
 			int result = *this->cur_read;
+
 			if ((char)result == '\e' && length >= 3) {
 				int check_arr[2] = {0, 0};
 				for (int i = 0; i < 2; i++) {
-					cur_read++;
-					if (cur_read == this->pos_end) { this->cur_read = this->inner; }
+					this->cur_read++;
+					if (this->cur_read == this->pos_end) { this->cur_read = this->inner; }
 
-					check_arr[i] = *cur_read;
+					check_arr[i] = *this->cur_read;
 				}
 
 				if ((char)check_arr[0] == '[') {
-					return '\e' << 16 + '[' << 8 + check_arr[1];
+					result = '\e';
+					result = result << 8;
+					result += (char)check_arr[0];
+					result = result << 8;
+					result += (char)check_arr[1];
+					// printf("-->%d %d\n", check_arr[0], check_arr[1]);
 				}
-			}
+			}			
 
+			this->cur_read++;
 			if (this->is_full) this->is_full = false;
 			if (this->cur_read == this->pos_end) this->cur_read = this->inner;
+
+			return result;
 		}
 		int peek_ch() {
 			int length = this->buffer_length();
@@ -182,7 +195,11 @@ class ringbuffer {
 				}
 
 				if ((char)check_arr[0] == '[') {
-					return '\e' << 16 + '[' << 8 + check_arr[1];
+					result = '\e';
+					result = result << 8;
+					result += (char)check_arr[0];
+					result = result << 8;
+					result += (char)check_arr[1];
 				}
 			}
 
@@ -296,29 +313,79 @@ public:
 	}
 };
 class component_list : public Component {
-protected:
+public:
 	wchar_t** list;
 	int show_start;
 	int show_end;
 	int pos = 0;
 	int length = 0;
+	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {
+		list = new wchar_t*[2];
+		list[0] = L"가나다라";
+		list[1] = L"마바사아";
 
-public:
-	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {}
+		length = 2;
+		show_end = std::min(height, length);
+	}
+	~component_list() {
+		for (int i = 0; i < length; i++) {
+			// 지금은 const wchar_t이지만, 나중에 직접 구현할때는 삭제해야함
+			// delete list[i];
+		}
+
+		delete list;
+	}
 	bool keyinput(Screen* scrn, int keycode) { 
-		
+		switch (escape_key(keycode)) {
+			case 'A': // up
+				if (pos == 0) { 
+					printf("\a");
+					break;
+				}
+
+				pos--;
+				if (show_start > pos) {
+					show_start -= 1;
+					show_end -= 1;
+				}
+				break;
+
+			case 'B': // down
+				if (pos == (length - 1)) {
+					printf("\a");
+					break;
+				}
+
+				pos++;
+				if (show_end < pos) {
+					show_start += 1;
+					show_end -= 1;
+				}
+				break;
+			default:
+				printf("\a");
+		}
 	}
 	int process(Screen* scrn) {
-		for (int h = 0; h < this->height; h++) {
 
-		}
 	}
 	void render(Screen* scrn) {
-		for (int h = 0; h < this->height; h++) {
-			for (int w = 0; w < this->width / 4; w++) {
-				scrn->framebuffer[(WIDTH * (y + h)) + (x + w)] = L'■';
+		for (int h = 0; h < std::min(height, this->show_end - this->show_start); h++) {
+			if (this->show_start + h == this->pos) {
+				scrn->framebuffer[WIDTH * (y + h) + x + 2] = L'@';
+			} else {
+				scrn->clear(x, y + h, 4, 1);
 			}
+
+			wcsncpy(scrn->framebuffer + (WIDTH * (y + h) + x + 5), this->list[this->show_start + h], width);
 		}
+	}
+	wchar_t* get_selected() {
+		int strlen = wcslen(this->list[this->pos]);
+		wchar_t* cloned = new wchar_t[strlen + 1];
+		wcscpy(cloned, this->list[this->pos]);
+
+		return cloned;
 	}
 };
 class component_line : public Component {
@@ -338,31 +405,37 @@ class screen_opening : public Screen {
 private:
 	component_header header = component_header(0, 0, 110, 27);
 	component_box box = component_box(WIDTH / 2 - 100, 28, 200, HEIGHT - 30);
+	component_list list = component_list(WIDTH / 2 - 99, 29, 198, HEIGHT - 28);
 	// component_line line = component_line(10, 10, 10, 10);
 public:
-	int process(Game* state) {
-		this->header.process(this);
-		
-	}
 	void render(Game* state) {
 		this->header.render(this);
 		this->box.render(this);
-		// this->line.render(this);
+		this->list.render(this);
 		Screen::render(state);
 	}
+	int process(Game* state);
+};
 
+class screen_survey : public Screen {
+public:
+	screen_survey(wchar_t* selected) {
+		printf("%S", selected);
+		delete selected;
+	}
 };
 
 class Game {
 private:
 	int lastloop_ts = 0; // input과 process에 의해서 시간 지연이 생길 수 있음. 루프 실행 timestamp를 이용해서 sleep 기간을 보정함.
 	int inputs_len = 0;
-	ringbuffer inputs = ringbuffer(1024); // 비동기로 처리할 것이기도 하고, frame의 전환에서도 입력을 유실하지 않게 따로 input 버퍼를 가지게 함. 이걸로 입력 처리를 해야함
-	Screen* current_screen; // 화면 처리의 최대단위. DP의 전략패턴을 이용할 것임. frame 아래에서 직접 다음 screen을 수정할 수도 있음을 주의
 
 	int state = NORMAL; // 현재 게임의 전체상태
 
 public:
+	Screen* current_screen; // 화면 처리의 최대단위. DP의 전략패턴을 이용할 것임. frame 아래에서 직접 다음 screen을 수정할 수도 있음을 주의
+	ringbuffer inputs = ringbuffer(1024); // 비동기로 처리할 것이기도 하고, frame의 전환에서도 입력을 유실하지 않게 따로 input 버퍼를 가지게 함. 이걸로 입력 처리를 해야함
+
 	Game() {
 		this->current_screen = new screen_opening();
 	}
@@ -393,6 +466,19 @@ public:
 	}
 };
 
+int screen_opening::process(Game* state) {
+	this->header.process(this);
+
+	int key_input = 0;
+	while ((key_input = state->inputs.get_ch()) != -1) {
+		if (key_input == '\n') {
+			state->current_screen = new screen_survey(this->list.get_selected());
+			delete this;
+		} else {
+			this->list.keyinput(this, key_input);
+		}
+	}
+}
 
 
 int main() {
@@ -404,6 +490,8 @@ int main() {
 		gameInstance.process();
 		gameInstance.render();
 
+		int k = gameInstance.inputs.get_ch();
+		// printf("%d %d", gameInstance.inputs.peek_ch(),  gameInstance.inputs.get_ch());
 		gameInstance.frame_limit(10);
 	}
 }
