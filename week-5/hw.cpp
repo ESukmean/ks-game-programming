@@ -19,7 +19,7 @@ const int NOOP = 10;
 const int TERMINATE = -10;
 
 const int WIDTH = 237;
-const int HEIGHT = 50;
+const int HEIGHT = 63;
 
 class Frame {
 public:
@@ -45,7 +45,7 @@ class ringbuffer {
 			this->pos_end = this->inner + capacity;
 			this->cur_write = this->cur_read = this->inner;
 
-			// ÀÎÇ²¿¡ ¿µÇâÀ» ¹ŞÀ¸¸é ¾ÈµÇ´Ï±î stdinÀ» ³Íºí·°Å·À¸·Î ¼³Á¤
+			// ì¸í’‹ì— ì˜í–¥ì„ ë°›ìœ¼ë©´ ì•ˆë˜ë‹ˆê¹Œ stdinì„ ë„Œë¸”ëŸ­í‚¹ìœ¼ë¡œ ì„¤ì •
 			struct termios oldSettings, newSettings;
 			tcgetattr( fileno( stdin ), &oldSettings );
 			newSettings = oldSettings;
@@ -86,7 +86,7 @@ class ringbuffer {
 			return this->capacity - this->buffer_avilable();
 		}
 		// char* put_arr() {
-		// 	// 0À¸·Î ÃÊ±âÈ­(Á¤¸®)ÈÄ ´øÁ®ÁÜ.
+		// 	// 0ìœ¼ë¡œ ì´ˆê¸°í™”(ì •ë¦¬)í›„ ë˜ì ¸ì¤Œ.
 		// 	memset(this->put_buf, NULL, this->capacity);
 		// 	return this->put_buf;
 		// }
@@ -96,20 +96,20 @@ class ringbuffer {
 			// printf("read %s", this->put_buf);
 			// printf("read_len %d\n", read_len);
 
-			// if (read_len > this->buffer_avilable()) { ¹öÆÛ ¼ö¿ë·® ÀÌ»óÀ¸·Î µé¾î¿À¸é ¸¶Áö¸·Àº ±×³É drop ÇÏµµ·Ï ÇÔ. ¾Æ·¡¿¡¼­ ¹Ù¿î´õ¸® Ã¼Å© ÇÊ¿ä }
+			// if (read_len > this->buffer_avilable()) { ë²„í¼ ìˆ˜ìš©ëŸ‰ ì´ìƒìœ¼ë¡œ ë“¤ì–´ì˜¤ë©´ ë§ˆì§€ë§‰ì€ ê·¸ëƒ¥ drop í•˜ë„ë¡ í•¨. ì•„ë˜ì—ì„œ ë°”ìš´ë”ë¦¬ ì²´í¬ í•„ìš” }
 			if (this->cur_read < this->cur_write) {
 				int tail_length = (this->pos_end - this->cur_write);
 				int tail_to_write = std::min(tail_length, read_len * (int)sizeof(int));
 				memcpy(this->cur_write, this->put_buf, tail_to_write);
 
 				if (tail_to_write < read_len) {
-					// ¾µ °Ô ´õ ³²¾Ò´Ù¸é...
+					// ì“¸ ê²Œ ë” ë‚¨ì•˜ë‹¤ë©´...
 					int head_to_write = std::min((read_len - tail_to_write) * (int)sizeof(int), (int)(this->cur_read - this->inner));
 					memcpy(this->inner, this->put_buf + tail_to_write, head_to_write);
 
 					this->cur_write = this->inner + head_to_write / sizeof(int);
 				} else {
-					// µÚÂÊ¿¡ ¾´°Å·Î ³¡ÀÌ¸é
+					// ë’¤ìª½ì— ì“´ê±°ë¡œ ëì´ë©´
 					this->cur_write += tail_to_write / sizeof(int);
 					if (this->cur_write == this->pos_end) this->cur_write = this->inner;
 				}
@@ -145,7 +145,7 @@ class ringbuffer {
 
 class Screen {
 public:
-	wchar_t* framebuffer; // multi-byte ¹®ÀÚ¿­ °í·Á
+	wchar_t* framebuffer; // multi-byte ë¬¸ìì—´ ê³ ë ¤
 	Screen() {
 		this->framebuffer = new wchar_t[WIDTH * HEIGHT];
 		clear();
@@ -157,7 +157,7 @@ public:
 	void clear(int x, int y, int width, int height) {
 		for (int h = 0; h < height; h++) {
 			for (int w = 0; w < width; w++) {
-				framebuffer[(h + y) * WIDTH + w + x] = *L" ";
+				framebuffer[(h + y) * WIDTH + w + x] = L' ';
 			}
 		}
 	}
@@ -176,7 +176,7 @@ public:
 	}
 	virtual void render(Game* state) {
 		printf("\033[0;0H");
-		for (int h = 0; h < 24; h++) {
+		for (int h = 0; h < HEIGHT; h++) {
 			printf("%.*S\n", WIDTH, this->framebuffer + (WIDTH * h));
 		}
 	}
@@ -217,14 +217,51 @@ class component_header : public Component {
 			int pos_y = tick / 2;
 			scrn->clear(0, 0, WIDTH, height);
 			for (int h = 0; h < 15; h++) {
-				scrn->fill(WIDTH / 2 - 55, h + pos_y + 3, 110, header + (110 * h));
+				scrn->fill(WIDTH / 2 - (this->width / 2), h + pos_y + 3, 110, header + (110 * h));
 			}
 		}
 };
+class component_box : public Component {
+public:
+	component_box(int x, int y, int width, int height) : Component(x, y, width, height) {}
+	~component_box() {}
+	int process(Screen* scrn) {
+		
+	}
+	void render(Screen* scrn) {
+		for (int w = 0; w < this->width; w++) {
+			scrn->framebuffer[(WIDTH * y) + (x + w)] = L'-';
+			scrn->framebuffer[(WIDTH * (y + height)) + (x + w)] = L'-';
+		}
+		for (int h = 0; h < this->height; h++) {
+			scrn->framebuffer[(WIDTH * (h + y)) + x] = L'|';
+			scrn->framebuffer[(WIDTH * (h + y)) + (x + width)] = L'|';
+		}
+
+		scrn->framebuffer[(WIDTH * y) + x] = L'*';
+		scrn->framebuffer[(WIDTH * y) + x + width] = L'*';
+		scrn->framebuffer[(WIDTH * (height + y)) + x] = L'*';
+		scrn->framebuffer[(WIDTH * (height + y)) + x + width] = L'*';
+	}
+};
+class component_line : public Component {
+public:
+	component_line(int x, int y, int width, int height) : Component(x, y, width, height) {}
+
+	int process(Screen* scrn) {}
+	void render(Screen* scrn) {
+		for (int h = 0; h < this->height; h++) {
+			for (int w = 0; w < this->width; w++) {
+				scrn->framebuffer[(WIDTH * (y + h)) + (x + w)] = L'â– ';
+			}
+		}
+	}
+};
 class screen_opening : public Screen {	
 private:
-	component_header header = component_header(0, 0, 180, 27);
-
+	component_header header = component_header(0, 0, 110, 27);
+	component_box box = component_box(WIDTH / 2 - 100, 28, 200, HEIGHT - 30);
+	component_line line = component_line(10, 10, 10, 10);
 public:
 	int process(Game* state) {
 		this->header.process(this);
@@ -232,6 +269,8 @@ public:
 	}
 	void render(Game* state) {
 		this->header.render(this);
+		this->box.render(this);
+		this->line.render(this);
 		Screen::render(state);
 	}
 
@@ -239,12 +278,12 @@ public:
 
 class Game {
 private:
-	int lastloop_ts = 0; // input°ú process¿¡ ÀÇÇØ¼­ ½Ã°£ Áö¿¬ÀÌ »ı±æ ¼ö ÀÖÀ½. ·çÇÁ ½ÇÇà timestamp¸¦ ÀÌ¿ëÇØ¼­ sleep ±â°£À» º¸Á¤ÇÔ.
+	int lastloop_ts = 0; // inputê³¼ processì— ì˜í•´ì„œ ì‹œê°„ ì§€ì—°ì´ ìƒê¸¸ ìˆ˜ ìˆìŒ. ë£¨í”„ ì‹¤í–‰ timestampë¥¼ ì´ìš©í•´ì„œ sleep ê¸°ê°„ì„ ë³´ì •í•¨.
 	int inputs_len = 0;
-	ringbuffer inputs = ringbuffer(1024); // ºñµ¿±â·Î Ã³¸®ÇÒ °ÍÀÌ±âµµ ÇÏ°í, frameÀÇ ÀüÈ¯¿¡¼­µµ ÀÔ·ÂÀ» À¯½ÇÇÏÁö ¾Ê°Ô µû·Î input ¹öÆÛ¸¦ °¡Áö°Ô ÇÔ. ÀÌ°É·Î ÀÔ·Â Ã³¸®¸¦ ÇØ¾ßÇÔ
-	Screen* current_screen; // È­¸é Ã³¸®ÀÇ ÃÖ´ë´ÜÀ§. DPÀÇ Àü·«ÆĞÅÏÀ» ÀÌ¿ëÇÒ °ÍÀÓ. frame ¾Æ·¡¿¡¼­ Á÷Á¢ ´ÙÀ½ screenÀ» ¼öÁ¤ÇÒ ¼öµµ ÀÖÀ½À» ÁÖÀÇ
+	ringbuffer inputs = ringbuffer(1024); // ë¹„ë™ê¸°ë¡œ ì²˜ë¦¬í•  ê²ƒì´ê¸°ë„ í•˜ê³ , frameì˜ ì „í™˜ì—ì„œë„ ì…ë ¥ì„ ìœ ì‹¤í•˜ì§€ ì•Šê²Œ ë”°ë¡œ input ë²„í¼ë¥¼ ê°€ì§€ê²Œ í•¨. ì´ê±¸ë¡œ ì…ë ¥ ì²˜ë¦¬ë¥¼ í•´ì•¼í•¨
+	Screen* current_screen; // í™”ë©´ ì²˜ë¦¬ì˜ ìµœëŒ€ë‹¨ìœ„. DPì˜ ì „ëµíŒ¨í„´ì„ ì´ìš©í•  ê²ƒì„. frame ì•„ë˜ì—ì„œ ì§ì ‘ ë‹¤ìŒ screenì„ ìˆ˜ì •í•  ìˆ˜ë„ ìˆìŒì„ ì£¼ì˜
 
-	int state = NORMAL; // ÇöÀç °ÔÀÓÀÇ ÀüÃ¼»óÅÂ
+	int state = NORMAL; // í˜„ì¬ ê²Œì„ì˜ ì „ì²´ìƒíƒœ
 
 public:
 	Game() {
