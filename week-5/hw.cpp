@@ -138,9 +138,55 @@ class ringbuffer {
 				// printf("%#04x() ", *cur);
 				cur++;
 
-				if (cur == this->pos_end + 1) cur = this->inner;
+				if (cur == this->pos_end) cur = this->inner;
 			}
 			// printf("\n");
+		}
+
+		int get_ch() {
+			int length = this->buffer_length();
+			if (length == 0) return -1;
+
+			int result = *this->cur_read;
+			if ((char)result == '\e' && length >= 3) {
+				int check_arr[2] = {0, 0};
+				for (int i = 0; i < 2; i++) {
+					cur_read++;
+					if (cur_read == this->pos_end) { this->cur_read = this->inner; }
+
+					check_arr[i] = *cur_read;
+				}
+
+				if ((char)check_arr[0] == '[') {
+					return '\e' << 16 + '[' << 8 + check_arr[1];
+				}
+			}
+
+			if (this->is_full) this->is_full = false;
+			if (this->cur_read == this->pos_end) this->cur_read = this->inner;
+		}
+		int peek_ch() {
+			int length = this->buffer_length();
+
+			if (length == 0) return -1;
+			int result = *this->cur_read;
+
+			if ((char)result == '\e' && length >= 3) {
+				int check_arr[2] = {0, 0};
+				int* cur_tmp = this->cur_read;
+				for (int i = 0; i < 2; i++) {
+					cur_tmp++;
+					if (cur_tmp == this->pos_end) { this->cur_read = this->inner; }
+
+					check_arr[i] = *cur_tmp;
+				}
+
+				if ((char)check_arr[0] == '[') {
+					return '\e' << 16 + '[' << 8 + check_arr[1];
+				}
+			}
+
+			return result;
 		}
 };
 
@@ -152,6 +198,7 @@ public:
 		clear();
 
 		setlocale(LC_ALL, "");
+		printf("\e[?25l");
 	}
 	~Screen() {
 		delete[] this->framebuffer;
@@ -198,6 +245,7 @@ class Component : public Frame {
 		}
 		virtual int process(Screen* scrn) {}
 		virtual void render(Screen* scrn) {}
+		virtual bool keyinput(Screen* scrn, int keycode) { return false; }
 };
 class component_header : public Component {
 	private:
@@ -247,6 +295,32 @@ public:
 		scrn->framebuffer[(WIDTH * (height + y)) + x + width] = L'┘';
 	}
 };
+class component_list : public Component {
+protected:
+	wchar_t** list;
+	int show_start;
+	int show_end;
+	int pos = 0;
+	int length = 0;
+
+public:
+	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {}
+	bool keyinput(Screen* scrn, int keycode) { 
+		
+	}
+	int process(Screen* scrn) {
+		for (int h = 0; h < this->height; h++) {
+
+		}
+	}
+	void render(Screen* scrn) {
+		for (int h = 0; h < this->height; h++) {
+			for (int w = 0; w < this->width / 4; w++) {
+				scrn->framebuffer[(WIDTH * (y + h)) + (x + w)] = L'■';
+			}
+		}
+	}
+};
 class component_line : public Component {
 public:
 	component_line(int x, int y, int width, int height) : Component(x, y, width, height) {}
@@ -268,7 +342,7 @@ private:
 public:
 	int process(Game* state) {
 		this->header.process(this);
-
+		
 	}
 	void render(Game* state) {
 		this->header.render(this);
