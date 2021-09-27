@@ -6,7 +6,8 @@
 #include <termios.h>
 #include <wchar.h>
 #include <time.h>
-
+#include <iostream>
+#include <locale.h>	
 
 class Frame;
 class Component;
@@ -149,6 +150,8 @@ public:
 	Screen() {
 		this->framebuffer = new wchar_t[WIDTH * HEIGHT];
 		clear();
+
+		setlocale(LC_ALL, "");
 	}
 	~Screen() {
 		delete[] this->framebuffer;
@@ -234,14 +237,14 @@ public:
 			scrn->framebuffer[(WIDTH * (y + height)) + (x + w)] = L'-';
 		}
 		for (int h = 0; h < this->height; h++) {
-			scrn->framebuffer[(WIDTH * (h + y)) + x] = L'|';
-			scrn->framebuffer[(WIDTH * (h + y)) + (x + width)] = L'|';
+			scrn->framebuffer[(WIDTH * (h + y)) + x] = L'│';
+			scrn->framebuffer[(WIDTH * (h + y)) + (x + width)] = L'│';
 		}
 
-		scrn->framebuffer[(WIDTH * y) + x] = L'*';
-		scrn->framebuffer[(WIDTH * y) + x + width] = L'*';
-		scrn->framebuffer[(WIDTH * (height + y)) + x] = L'*';
-		scrn->framebuffer[(WIDTH * (height + y)) + x + width] = L'*';
+		scrn->framebuffer[(WIDTH * y) + x] = L'┌';
+		scrn->framebuffer[(WIDTH * y) + x + width] = L'┐';
+		scrn->framebuffer[(WIDTH * (height + y)) + x] = L'└';
+		scrn->framebuffer[(WIDTH * (height + y)) + x + width] = L'┘';
 	}
 };
 class component_line : public Component {
@@ -251,7 +254,7 @@ public:
 	int process(Screen* scrn) {}
 	void render(Screen* scrn) {
 		for (int h = 0; h < this->height; h++) {
-			for (int w = 0; w < this->width; w++) {
+			for (int w = 0; w < this->width / 4; w++) {
 				scrn->framebuffer[(WIDTH * (y + h)) + (x + w)] = L'■';
 			}
 		}
@@ -261,7 +264,7 @@ class screen_opening : public Screen {
 private:
 	component_header header = component_header(0, 0, 110, 27);
 	component_box box = component_box(WIDTH / 2 - 100, 28, 200, HEIGHT - 30);
-	component_line line = component_line(10, 10, 10, 10);
+	// component_line line = component_line(10, 10, 10, 10);
 public:
 	int process(Game* state) {
 		this->header.process(this);
@@ -270,7 +273,7 @@ public:
 	void render(Game* state) {
 		this->header.render(this);
 		this->box.render(this);
-		this->line.render(this);
+		// this->line.render(this);
 		Screen::render(state);
 	}
 
