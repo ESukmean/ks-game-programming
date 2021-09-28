@@ -9,6 +9,8 @@
 #include <iostream>
 #include <filesystem>
 #include <locale.h>	
+#include <fstream>
+#include <codecvt>
 
 class Frame;
 class Component;
@@ -54,6 +56,16 @@ class ringbuffer {
 			this->pos_end = this->inner + capacity;
 			this->cur_write = this->cur_read = this->inner;
 
+			set_mode_getkey();
+		}
+		~ringbuffer() {
+			delete[] this->inner;
+			delete[] this->put_buf;
+		}
+
+		void set_mode_getkey() {
+			printf("\e[?25l");
+
 			// 인풋에 영향을 받으면 안되니까 stdin을 넌블럭킹으로 설정
 			struct termios oldSettings, newSettings;
 			tcgetattr( fileno( stdin ), &oldSettings );
@@ -63,10 +75,18 @@ class ringbuffer {
 
 			fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
 		}
-		~ringbuffer() {
-			delete[] this->inner;
-			delete[] this->put_buf;
+		void set_mode_echo() {
+			printf("\e[?25h");
+
+			struct termios oldSettings, newSettings;
+			tcgetattr( fileno( stdin ), &oldSettings );
+			newSettings = oldSettings;
+			newSettings.c_lflag |= (ICANON | ECHO);
+			tcsetattr( fileno( stdin ), TCSANOW, &newSettings );    
+
+			fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK);
 		}
+		
 
 		void stdin_read() {
 			int result = 0;
@@ -219,7 +239,6 @@ public:
 		clear();
 
 		setlocale(LC_ALL, "");
-		printf("\e[?25l");
 	}
 	~Screen() {
 		delete[] this->framebuffer;
@@ -363,6 +382,8 @@ public:
 
 		length = index;
 		if (pos > length) pos = length - 1;
+		if (show_end >= length) { show_end = (show_start + height) > length ? length : show_start + height; }
+
 	}
 	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {
 		refresh_list();
@@ -538,13 +559,43 @@ public:
 	int process(Game * state) {
 
 	}
-	void render(Game * state) {
-		this->menu.render(this);
-		this->spilter.render(this);
+	void render(Game * state);
+	void enter_blocking(Game* state) {
+		int length = 0;
+		printf("\033[10;3H - 총 문항수를 입력해주세요: ");
+		scanf("%d", &length);
+		
+		char* name = new char[250];
+		printf("\033[11;3H - 설문조사 명을 입력해주세요: ");
+		scanf("%s", name);
 
-		Screen::render(state);
+		printf("\n\n");
+		char** survey = new char*[length];
+		for (int i = 0; i < length; i++) {
+			survey[i] = new char[500];
 
+			printf("\t * %d번 문항을 입력해 주세요: ", i + 1);
+			scanf("%S", survey[i]);
+		}
+		
+		printf("\n\n\t생성중입니다....");
+
+		std::string path("./");
+		path.append(name);
+
+		std::wofstream ofs(path.c_str(), std::ios_base::out | std::ios_base::trunc);
+		for (int i = 0; i < length; i++) {
+			ofs << survey[i] << std::endl;
+		}
+
+		ofs.close();
+
+		printf("\n\n\t설문조사가 생성되었습니다.");
+		usleep(1000 * 1000);
+
+		switch_to_main_screen(state);
 	}
+	void switch_to_main_screen(Game* state);
 };
 class Game {
 private:
@@ -610,7 +661,9 @@ int screen_opening::process(Game* state) {
 
 			auto filename = this->list.get_selected();
 			auto filename_str = std::wstring(L"./").append(filename);
-			if (std::filesystem::remove(filename) == 0) {
+			std::wstring_convert<std::codecvt_utf8<wchar_t>> myconv;
+
+			if (std::filesystem::remove(myconv.to_bytes(filename_str)) == 0) {
 				this->txt1.set_alert(this->txt1.from_const(L"* 이 파일은 삭제할 수 없습니다."));
 				printf("\a");
 				return NORMAL;
@@ -622,6 +675,21 @@ int screen_opening::process(Game* state) {
 			this->list.keyinput(this, key_input);
 		}
 	}
+}
+void screen_new::switch_to_main_screen(Game* state) {
+	state->inputs.set_mode_getkey();
+	state->current_screen = new screen_opening();
+	delete this;
+
+	while (getchar() != -1); // 버퍼에 남아있는것 제거
+}
+void screen_new::render(Game* state) {
+	this->menu.render(this);
+	this->spilter.render(this);
+
+	Screen::render(state);
+	state->inputs.set_mode_echo();
+	this->enter_blocking(state);
 }
 
 
