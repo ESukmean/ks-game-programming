@@ -540,10 +540,55 @@ public:
 
 class screen_survey : public Screen {
 public:
+	component_text menu = component_text(1, 1, 100, 1);
+	component_text menu2 = component_text(10, 1, 100, 1);
+	component_text spilter = component_text(0, 3, 100, 1);
 	screen_survey(wchar_t* selected) {
-		printf("%S", selected);
-		delete selected;
+		menu.set_msg(menu.from_const(L"설문조사 : "));
+		menu2.set_msg(selected);
+		spilter.set_msg(menu.from_const(L"=========================================="));
 	}
+
+	int process(Game * state) {
+
+	}
+	void render(Game * state);
+	void enter_blocking(Game* state) {
+		int length = 0;
+		printf("\033[10;3H - 총 문항수를 입력해주세요: ");
+		scanf("%d", &length);
+		
+		char* name = new char[250];
+		printf("\033[11;3H - 설문조사 명을 입력해주세요: ");
+		scanf("%s", name);
+
+		printf("\n\n");
+		char** survey = new char*[length];
+		for (int i = 0; i < length; i++) {
+			survey[i] = new char[500];
+
+			printf("\t * %d번 문항을 입력해 주세요: ", i + 1);
+			scanf("%s", survey[i]);
+		}
+		
+		printf("\n\n\t생성중입니다....");
+
+		std::string path("./");
+		path.append(name);
+
+		std::ofstream ofs(path.c_str(), std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+		for (int i = 0; i < length; i++) {
+			ofs << survey[i] << std::endl;
+		}
+
+		ofs.close();
+
+		printf("\n\n\t설문조사가 생성되었습니다.");
+		usleep(1000 * 1000);
+
+		switch_to_main_screen(state);
+	}
+	void switch_to_main_screen(Game* state);
 };
 
 class screen_new : public Screen {
@@ -575,7 +620,7 @@ public:
 			survey[i] = new char[500];
 
 			printf("\t * %d번 문항을 입력해 주세요: ", i + 1);
-			scanf("%S", survey[i]);
+			scanf("%s", survey[i]);
 		}
 		
 		printf("\n\n\t생성중입니다....");
@@ -583,7 +628,7 @@ public:
 		std::string path("./");
 		path.append(name);
 
-		std::wofstream ofs(path.c_str(), std::ios_base::out | std::ios_base::trunc);
+		std::ofstream ofs(path.c_str(), std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
 		for (int i = 0; i < length; i++) {
 			ofs << survey[i] << std::endl;
 		}
@@ -682,6 +727,22 @@ void screen_new::switch_to_main_screen(Game* state) {
 	delete this;
 
 	while (getchar() != -1); // 버퍼에 남아있는것 제거
+}
+void screen_survey::switch_to_main_screen(Game* state) {
+	state->inputs.set_mode_getkey();
+	state->current_screen = new screen_opening();
+	delete this;
+
+	while (getchar() != -1); // 버퍼에 남아있는것 제거
+}
+void screen_survey::render(Game* state) {
+	this->menu.render(this);
+	this->menu2.render(this);
+	this->spilter.render(this);
+
+	Screen::render(state);
+	state->inputs.set_mode_echo();
+	this->enter_blocking(state);
 }
 void screen_new::render(Game* state) {
 	this->menu.render(this);
