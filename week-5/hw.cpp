@@ -7,6 +7,7 @@
 #include <wchar.h>
 #include <time.h>
 #include <iostream>
+#include <filesystem>
 #include <locale.h>	
 
 class Frame;
@@ -290,6 +291,8 @@ class component_header : public Component {
 		}
 };
 class component_box : public Component {
+private:
+	bool display_side = true;
 public:
 	component_box(int x, int y, int width, int height) : Component(x, y, width, height) {}
 	~component_box() {}
@@ -301,15 +304,21 @@ public:
 			scrn->framebuffer[(WIDTH * y) + (x + w)] = L'-';
 			scrn->framebuffer[(WIDTH * (y + height)) + (x + w)] = L'-';
 		}
-		for (int h = 0; h < this->height; h++) {
-			scrn->framebuffer[(WIDTH * (h + y)) + x] = L'│';
-			scrn->framebuffer[(WIDTH * (h + y)) + (x + width)] = L'│';
+		if (this->display_side) {
+			for (int h = 0; h < this->height; h++) {
+				scrn->framebuffer[(WIDTH * (h + y)) + x] = L'│';
+				scrn->framebuffer[(WIDTH * (h + y)) + (x + width)] = L'│';
+			}
 		}
 
 		scrn->framebuffer[(WIDTH * y) + x] = L'┌';
 		scrn->framebuffer[(WIDTH * y) + x + width] = L'┐';
 		scrn->framebuffer[(WIDTH * (height + y)) + x] = L'└';
 		scrn->framebuffer[(WIDTH * (height + y)) + x + width] = L'┘';
+	}
+
+	void enable_sidedisplay(bool enabled) {
+		this->display_side = enabled;
 	}
 };
 class component_list : public Component {
@@ -319,18 +328,47 @@ public:
 	int show_end;
 	int pos = 0;
 	int length = 0;
-	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {
-		list = new wchar_t*[2];
-		list[0] = L"가나다라";
-		list[1] = L"마바사아";
+	void refresh_list() {
+		namespace fs = std::filesystem;
+		std::string path = "./";
+		
+		if (length > 0) {
+			for (int i = 1; i < length; i++) {
+				delete list[i];
+			}
+			delete list;
+		}
 
-		length = 2;
+		list = new wchar_t*[100];
+		list[0] = L"새로 만들기...";
+
+		int index = 1;
+		for (const auto & entry : fs::directory_iterator(path)) {
+			auto path = entry.path().u16string();
+			if (path.length() <= 2) continue;
+
+			std::wstring wpath;
+			wpath.assign(path.begin(), path.end());
+
+			wchar_t* ws_cloned = new wchar_t[wpath.length()];
+			wcpcpy(ws_cloned, wpath.c_str() + 2);
+
+			list[index++] = ws_cloned;
+
+			if (index == 100) break;
+		}
+
+		length = index;
+		if (pos > length) pos = length - 1;
+	}
+	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {
+		refresh_list();
+
 		show_end = std::min(height, length);
 	}
 	~component_list() {
-		for (int i = 0; i < length; i++) {
-			// 지금은 const wchar_t이지만, 나중에 직접 구현할때는 삭제해야함
-			// delete list[i];
+		for (int i = 1; i < length; i++) {
+			delete list[i];
 		}
 
 		delete list;
@@ -338,7 +376,8 @@ public:
 	bool keyinput(Screen* scrn, int keycode) { 
 		switch (escape_key(keycode)) {
 			case 'A': // up
-				if (pos == 0) { 
+				if (pos <= 0) { 
+					pos = 0;
 					printf("\a");
 					break;
 				}
@@ -351,15 +390,16 @@ public:
 				break;
 
 			case 'B': // down
-				if (pos == (length - 1)) {
+				if (pos >= (length - 1)) {
+					pos = length - 1;
 					printf("\a");
 					break;
 				}
 
 				pos++;
-				if (show_end < pos) {
+				if (show_end <= pos) {
 					show_start += 1;
-					show_end -= 1;
+					show_end += 1;
 				}
 				break;
 			default:
@@ -370,14 +410,17 @@ public:
 
 	}
 	void render(Screen* scrn) {
-		for (int h = 0; h < std::min(height, this->show_end - this->show_start); h++) {
-			if (this->show_start + h == this->pos) {
-				scrn->framebuffer[WIDTH * (y + h) + x + 2] = L'@';
-			} else {
-				scrn->clear(x, y + h, 4, 1);
-			}
+		scrn->clear(x, y, width, height);
 
-			wcsncpy(scrn->framebuffer + (WIDTH * (y + h) + x + 5), this->list[this->show_start + h], width);
+		for (int h = 0; h < std::min(height, this->show_end - this->show_start); h++) {
+			if (this->show_start + h == this->pos) 
+				scrn->framebuffer[WIDTH * (y + h) + x + 2] = L'@';
+
+			int length = wcslen(this->list[this->show_start + h]);
+			scrn->fill(x + 5, y + h, length, this->list[this->show_start + h]);
+
+			wchar_t* null_pos = scrn->framebuffer + (WIDTH * (y + h) + x + 5 + length);
+			*null_pos = L' ';
 		}
 	}
 	wchar_t* get_selected() {
@@ -386,6 +429,9 @@ public:
 		wcscpy(cloned, this->list[this->pos]);
 
 		return cloned;
+	}
+	int get_selected_pos() {
+		return this->pos;
 	}
 };
 class component_line : public Component {
@@ -401,17 +447,64 @@ public:
 		}
 	}
 };
+class component_text : public Component {
+wchar_t* msg = 0;
+wchar_t* alert = 0;
+int alert_tick = 20;
+public:
+	component_text(int x, int y, int width, int height) : Component(x, y, width, height) {
+
+	}
+
+	int process(Screen* scrn) {
+		if(alert_tick < 20) alert_tick++;
+	}
+	void render(Screen* scrn) {
+		scrn->clear(x, y, width, height);
+
+		if (alert_tick < 20 && this->alert != 0) {
+			scrn->fill(x, y, std::min(this->width, (int)wcslen(this->alert)), this->alert);
+		} else if(this->msg != 0) {
+			scrn->fill(x, y, std::min(this->width, (int)wcslen(this->msg)), this->msg);
+		}
+	}
+
+	void set_msg(wchar_t* msg) {
+		if (this->msg != 0) delete this->msg;
+		this->msg = msg;
+	}
+	void set_alert(wchar_t* alert) {
+		if (this->alert != 0) delete this->alert;
+		this->alert = alert;
+		this->alert_tick = 0;
+	}
+
+	static wchar_t* from_const(wchar_t* const msg_const) {
+		wchar_t* msg = new wchar_t[wcslen(msg_const) + 1];
+		wcscpy(msg, msg_const);
+
+		return msg;
+	}
+};
 class screen_opening : public Screen {	
 private:
 	component_header header = component_header(0, 0, 110, 27);
 	component_box box = component_box(WIDTH / 2 - 100, 28, 200, HEIGHT - 30);
-	component_list list = component_list(WIDTH / 2 - 99, 29, 198, HEIGHT - 28);
+	component_list list = component_list(WIDTH / 2 - 99, 29, 198, HEIGHT - 32);
+	component_text txt1 = component_text(WIDTH / 2 - 99, HEIGHT - 1, 100, 1);
 	// component_line line = component_line(10, 10, 10, 10);
 public:
+	screen_opening() {
+		this->txt1.set_msg(this->txt1.from_const(L"응답할 설문을 선택하거나 새로 만들어주세요 (엔터: 선택. D: 삭제, 화살표: 이동)"));
+
+		this->box.enable_sidedisplay(false);
+	}
+
 	void render(Game* state) {
 		this->header.render(this);
 		this->box.render(this);
 		this->list.render(this);
+		this->txt1.render(this);
 		Screen::render(state);
 	}
 	int process(Game* state);
@@ -425,6 +518,9 @@ public:
 	}
 };
 
+class screen_new : public Screen {
+	
+}
 class Game {
 private:
 	int lastloop_ts = 0; // input과 process에 의해서 시간 지연이 생길 수 있음. 루프 실행 timestamp를 이용해서 sleep 기간을 보정함.
@@ -468,12 +564,30 @@ public:
 
 int screen_opening::process(Game* state) {
 	this->header.process(this);
+	this->txt1.process(this);
 
 	int key_input = 0;
 	while ((key_input = state->inputs.get_ch()) != -1) {
 		if (key_input == '\n') {
 			state->current_screen = new screen_survey(this->list.get_selected());
 			delete this;
+		} else if (key_input == 'd' || key_input == 'D') {
+			if(this->list.get_selected_pos() == 0) { 
+				this->txt1.set_alert(this->txt1.from_const(L"* 새로 만들기 항목은 삭제할 수 없습니다."));
+				printf("\a");
+				return NORMAL;
+			}
+
+			auto filename = this->list.get_selected();
+			auto filename_str = std::wstring(L"./").append(filename);
+			if (std::filesystem::remove(filename) == 0) {
+				this->txt1.set_alert(this->txt1.from_const(L"* 이 파일은 삭제할 수 없습니다."));
+				printf("\a");
+				return NORMAL;
+			}
+
+			this->list.refresh_list();
+			delete filename;
 		} else {
 			this->list.keyinput(this, key_input);
 		}
