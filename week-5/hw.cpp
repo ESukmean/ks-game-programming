@@ -13,6 +13,9 @@
 class Frame;
 class Component;
 class Screen;
+class screen_new;
+class screen_opening;
+class screen_survey;
 class Game;
 class ringbuffer;
 
@@ -455,6 +458,10 @@ public:
 	component_text(int x, int y, int width, int height) : Component(x, y, width, height) {
 
 	}
+	~component_text() {
+		if (this->msg != 0) delete this->msg;
+		if (this->alert != 0) delete this->alert;
+	}
 
 	int process(Screen* scrn) {
 		if(alert_tick < 20) alert_tick++;
@@ -519,8 +526,26 @@ public:
 };
 
 class screen_new : public Screen {
-	
-}
+public:
+	component_text menu = component_text(1, 1, 100, 1);
+	component_text spilter = component_text(0, 3, 100, 1);
+
+	screen_new() {
+		menu.set_msg(menu.from_const(L"설문조사 새로 만들기"));
+		spilter.set_msg(menu.from_const(L"=========================================="));
+	}
+
+	int process(Game * state) {
+
+	}
+	void render(Game * state) {
+		this->menu.render(this);
+		this->spilter.render(this);
+
+		Screen::render(state);
+
+	}
+};
 class Game {
 private:
 	int lastloop_ts = 0; // input과 process에 의해서 시간 지연이 생길 수 있음. 루프 실행 timestamp를 이용해서 sleep 기간을 보정함.
@@ -569,7 +594,12 @@ int screen_opening::process(Game* state) {
 	int key_input = 0;
 	while ((key_input = state->inputs.get_ch()) != -1) {
 		if (key_input == '\n') {
-			state->current_screen = new screen_survey(this->list.get_selected());
+			if (this->list.get_selected_pos() == 0) {
+				state->current_screen = new screen_new();
+			} else {
+				state->current_screen = new screen_survey(this->list.get_selected());
+			}
+
 			delete this;
 		} else if (key_input == 'd' || key_input == 'D') {
 			if(this->list.get_selected_pos() == 0) { 
