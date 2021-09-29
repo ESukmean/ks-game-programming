@@ -28,9 +28,23 @@ const int TERMINATE = -10;
 const int WIDTH = 237;
 const int HEIGHT = 63;
 
+static int clear_stdin() {
+	auto original = fcntl(STDIN_FILENO, F_GETFL);	
+	fcntl(STDIN_FILENO, F_SETFL,  original | O_NONBLOCK);
+	
+	while (getchar() != -1);
+
+	fcntl(STDIN_FILENO, F_SETFL, original);
+}
 static int escape_key(int k) {
 	if (k == -1 || (k & 1792768) != 1792768)  return -1;
 	return k & 255;
+}
+static void beep_alert() {
+	printf("\a");
+}
+static void gotoConsole(int x, int y) {
+	printf("\033[%d;%dH", y, x);
 }
 class Frame {
 public:
@@ -214,7 +228,6 @@ class ringbuffer {
 				for (int i = 0; i < 2; i++) {
 					cur_tmp++;
 					if (cur_tmp == this->pos_end) { this->cur_read = this->inner; }
-
 					check_arr[i] = *cur_tmp;
 				}
 
@@ -265,7 +278,7 @@ public:
 
 	}
 	virtual void render(Game* state) {
-		printf("\033[0;0H");
+		gotoConsole(0, 0);
 		for (int h = 0; h < HEIGHT; h++) {
 			printf("%.*S\n", WIDTH, this->framebuffer + (WIDTH * h));
 		}
@@ -352,7 +365,7 @@ public:
 	int length = 0;
 	void refresh_list() {
 		namespace fs = std::filesystem;
-		std::string path = "./";
+		std::string path = "./question/";
 		
 		if (length > 0) {
 			for (int i = 1; i < length; i++) {
@@ -373,7 +386,7 @@ public:
 			wpath.assign(path.begin(), path.end());
 
 			wchar_t* ws_cloned = new wchar_t[wpath.length()];
-			wcpcpy(ws_cloned, wpath.c_str() + 2);
+			wcpcpy(ws_cloned, wpath.c_str() + 11);
 
 			list[index++] = ws_cloned;
 
@@ -402,7 +415,7 @@ public:
 			case 'A': // up
 				if (pos <= 0) { 
 					pos = 0;
-					printf("\a");
+					beep_alert();
 					break;
 				}
 
@@ -416,7 +429,7 @@ public:
 			case 'B': // down
 				if (pos >= (length - 1)) {
 					pos = length - 1;
-					printf("\a");
+					beep_alert();
 					break;
 				}
 
@@ -427,7 +440,7 @@ public:
 				}
 				break;
 			default:
-				printf("\a");
+				beep_alert();
 		}
 	}
 	int process(Screen* scrn) {
@@ -523,7 +536,7 @@ private:
 	// component_line line = component_line(10, 10, 10, 10);
 public:
 	screen_opening() {
-		this->txt1.set_msg(this->txt1.from_const(L"응답할 설문을 선택하거나 새로 만들어주세요 (엔터: 선택. D: 삭제, 화살표: 이동)"));
+		this->txt1.set_msg(this->txt1.from_const(L"응답할 설문을 선택하거나 새로 만들어주세요 (엔터: 선택. D: 삭제, 화살표: 이동), Q를 누르면 종료합니다."));
 
 		this->box.enable_sidedisplay(false);
 	}
@@ -539,11 +552,14 @@ public:
 };
 
 class screen_survey : public Screen {
+private:
+	wchar_t* filename;
 public:
 	component_text menu = component_text(1, 1, 100, 1);
 	component_text menu2 = component_text(10, 1, 100, 1);
 	component_text spilter = component_text(0, 3, 100, 1);
 	screen_survey(wchar_t* selected) {
+		this->filename = selected;
 		menu.set_msg(menu.from_const(L"설문조사 : "));
 		menu2.set_msg(selected);
 		spilter.set_msg(menu.from_const(L"=========================================="));
@@ -554,37 +570,64 @@ public:
 	}
 	void render(Game * state);
 	void enter_blocking(Game* state) {
-		int length = 0;
-		printf("\033[10;3H - 총 문항수를 입력해주세요: ");
-		scanf("%d", &length);
+		std::wstring_convert<std::codecvt_utf8<wchar_t>> myconv;
 		
-		char* name = new char[250];
-		printf("\033[11;3H - 설문조사 명을 입력해주세요: ");
-		scanf("%s", name);
+		auto fpr = fopen(std::string("./question/").append(myconv.to_bytes(this->filename)).c_str(), "r");
+		char** question = new char*[10];
+		int count = 0;
+		int max_question = 10;
+		while(!feof(fpr))
+		{
+			char* chr = (char*)malloc(sizeof(char) * 502);
+			if(fgets(chr, 500, fpr) == 0) break;
 
-		printf("\n\n");
-		char** survey = new char*[length];
-		for (int i = 0; i < length; i++) {
-			survey[i] = new char[500];
+			question[count] = chr;
+			int pos_newline = strlen(question[count]) - 1;	
+			question[count][pos_newline] = L' ';
+			count++;
+			
+			if (count == max_question) {
+				question = (char**)realloc(question, max_question * sizeof(char*) * 2);
+				max_question *= 2;
+			}
+		}
+		fclose(fpr);
+		
+		gotoConsole(0, 7);
+		printf("\t설문은 총 %d개 문항입니다.\n\t설문은 숫자로만 응답할 수 있습니다.\n\n\n\n", count);
+		
+		int* answer = new int[count];
 
-			printf("\t * %d번 문항을 입력해 주세요: ", i + 1);
-			scanf("%s", survey[i]);
+		for (int i = 0; i < count; i++) {
+			printf("\t 문항 %d) %s : \n", i + 1, question[i]);
+		}
+		gotoConsole(0, 12);
+		for(int i = 0; i < count; i++) {
+			printf("\t 문항 %d) %s : ", i + 1, question[i]);
+			scanf("%d", answer + i);
+
+			clear_stdin();
 		}
 		
-		printf("\n\n\t생성중입니다....");
-
-		std::string path("./");
-		path.append(name);
-
-		std::ofstream ofs(path.c_str(), std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
-		for (int i = 0; i < length; i++) {
-			ofs << survey[i] << std::endl;
+		printf("\n\n\t응답을 저장하고 있습니다...");
+		
+		auto answer_file_path = std::string("./answer/").append(myconv.to_bytes(this->filename));
+		auto answer_file = fopen(answer_file_path.c_str(), "a");
+		for (int i = 0; i < count; i++) {
+			fprintf(answer_file, "%d ", answer[i]);
 		}
+		fprintf(answer_file, "\n");
+		fflush(answer_file);
 
-		ofs.close();
+		printf("\n\n\t응답이 완료되었습니다. 감사합니다.\n");
+		fclose(answer_file);
+		usleep(1500 * 1000);
 
-		printf("\n\n\t설문조사가 생성되었습니다.");
-		usleep(1000 * 1000);
+		for (int i = 0; i < count; i++) {
+			delete question[i];
+		}
+		delete question;
+		delete[] answer;
 
 		switch_to_main_screen(state);
 	}
@@ -606,31 +649,38 @@ public:
 	}
 	void render(Game * state);
 	void enter_blocking(Game* state) {
+		char* name = new char[250];
+		gotoConsole(3, 10);
+		printf(" - 설문조사 명을 입력해주세요: ");
+		scanf("%s", name);
+
 		int length = 0;
-		printf("\033[10;3H - 총 문항수를 입력해주세요: ");
+		gotoConsole(3, 11);
+		printf(" - 총 문항수를 입력해주세요: ");
 		scanf("%d", &length);
 		
-		char* name = new char[250];
-		printf("\033[11;3H - 설문조사 명을 입력해주세요: ");
-		scanf("%s", name);
+
+		clear_stdin();
 
 		printf("\n\n");
 		char** survey = new char*[length];
 		for (int i = 0; i < length; i++) {
-			survey[i] = new char[500];
+			survey[i] = (char*)malloc(sizeof(char) * 501);
 
 			printf("\t * %d번 문항을 입력해 주세요: ", i + 1);
-			scanf("%s", survey[i]);
+			fgets(survey[i], 500, stdin);
+			
+			clear_stdin();
 		}
 		
 		printf("\n\n\t생성중입니다....");
 
-		std::string path("./");
+		std::string path("./question/");
 		path.append(name);
 
 		std::ofstream ofs(path.c_str(), std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
 		for (int i = 0; i < length; i++) {
-			ofs << survey[i] << std::endl;
+			ofs << survey[i];
 		}
 
 		ofs.close();
@@ -647,9 +697,8 @@ private:
 	int lastloop_ts = 0; // input과 process에 의해서 시간 지연이 생길 수 있음. 루프 실행 timestamp를 이용해서 sleep 기간을 보정함.
 	int inputs_len = 0;
 
-	int state = NORMAL; // 현재 게임의 전체상태
-
 public:
+	int state = NORMAL; // 현재 게임의 전체상태
 	Screen* current_screen; // 화면 처리의 최대단위. DP의 전략패턴을 이용할 것임. frame 아래에서 직접 다음 screen을 수정할 수도 있음을 주의
 	ringbuffer inputs = ringbuffer(1024); // 비동기로 처리할 것이기도 하고, frame의 전환에서도 입력을 유실하지 않게 따로 input 버퍼를 가지게 함. 이걸로 입력 처리를 해야함
 
@@ -716,6 +765,8 @@ int screen_opening::process(Game* state) {
 
 			this->list.refresh_list();
 			delete filename;
+		} else if (key_input == 'q' || key_input == 'Q') {
+			state->state = TERMINATE;
 		} else {
 			this->list.keyinput(this, key_input);
 		}
@@ -767,4 +818,7 @@ int main() {
 		// printf("%d %d", gameInstance.inputs.peek_ch(),  gameInstance.inputs.get_ch());
 		gameInstance.frame_limit(10);
 	}
+
+	gameInstance.inputs.set_mode_echo();
+	system("clear");
 }
