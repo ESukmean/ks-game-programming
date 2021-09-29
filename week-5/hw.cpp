@@ -159,10 +159,18 @@ class ringbuffer {
 			} else {
 				int avilable = this->buffer_avilable();
 				int length = std::min(read_len, avilable > 0 ? avilable : this->capacity);
-				memcpy(this->cur_write, this->put_buf, length * sizeof(int));
+
+				int tail_left = this->pos_end - this->cur_write;
+				memcpy(this->cur_write, this->put_buf, sizeof(int) * std::min(tail_left, length));
+
+				if (tail_left <= length) {
+					length -= tail_left;
+
+					this->cur_write = this->inner;
+					memcpy(this->cur_write, this->put_buf + tail_left, sizeof(int) * length);
+				} 
 
 				this->cur_write += length;
-				// printf("cur advanced %d\n", this->cur_write - this->inner); 
 			}
 
 			if(this->cur_read == this->cur_write) {
