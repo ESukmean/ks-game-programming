@@ -708,7 +708,7 @@ private:
 public:
 	int state = NORMAL; // 현재 게임의 전체상태
 	Screen* current_screen; // 화면 처리의 최대단위. DP의 전략패턴을 이용할 것임. frame 아래에서 직접 다음 screen을 수정할 수도 있음을 주의
-	ringbuffer inputs = ringbuffer(1024); // 비동기로 처리할 것이기도 하고, frame의 전환에서도 입력을 유실하지 않게 따로 input 버퍼를 가지게 함. 이걸로 입력 처리를 해야함
+	ringbuffer inputs = ringbuffer(32); // 비동기로 처리할 것이기도 하고, frame의 전환에서도 입력을 유실하지 않게 따로 input 버퍼를 가지게 함. 이걸로 입력 처리를 해야함
 
 	Game() {
 		this->current_screen = new screen_opening();
@@ -762,7 +762,7 @@ int screen_opening::process(Game* state) {
 			}
 
 			auto filename = this->list.get_selected();
-			auto filename_str = std::wstring(L"./").append(filename);
+			auto filename_str = std::wstring(L"./question/").append(filename);
 			std::wstring_convert<std::codecvt_utf8<wchar_t>> myconv;
 
 			if (std::filesystem::remove(myconv.to_bytes(filename_str)) == 0) {
