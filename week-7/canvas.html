@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas로 주사위 그리기</title>
+</head>
+<body>
+	<canvas style="display: block; width: 720px; height: 400px; margin: 0 auto; border:1px solid #d3d3d3;">
+		canvas를 지원하지 않습니다.
+	</canvas>
+	<script>
+		let ctx = document.querySelector('canvas').getContext('2d');	
+
+		function draw_box(row, col) {
+			ctx.beginPath();
+			ctx.strokeStyle = "black"
+			ctx.rect(20 + (col * 70), 20 + (row * 70), 50, 50);
+			ctx.lineWidth = 2;
+			ctx.stroke();
+		}
+		
+		function draw_dots(row, col, num) {
+			let base_x = 20 + col * 70;
+			let base_y = 20 + row * 70;
+			
+			const draw_dot = (x, y) => {
+				ctx.beginPath();
+				ctx.arc(base_x + x, base_y + y, 3, 0, 2 * Math.PI);
+				ctx.fill();
+				ctx.stroke();
+			};
+
+			switch (num) {
+				case 1:
+					draw_dot(50 / 2, 50 / 2);
+					break;
+
+				case 2:
+				case 3:
+					draw_dot(50 / 4, 50 / 4);
+					draw_dot(50 / 4 * 3, 50 / 4 * 3);
+					if (num == 2) break;
+					draw_dot(50 / 2, 50 / 2);
+					
+					break;
+				case 4:
+				case 5:
+				case 6:
+					draw_dot(50 / 4, 50 / 4);
+					draw_dot(50 / 4, 50 / 4 * 3);
+					draw_dot(50 / 4 * 3, 50 / 4 * 3);
+					draw_dot(50 / 4 * 3, 50 / 4);
+
+					if (num == 5) draw_dot(50 / 2, 50 / 2);
+					if (num == 6) {
+						draw_dot(50 / 4, 50 / 4 * 2);
+						draw_dot(50 / 4 * 3, 50 / 4 * 2);
+					}
+					break;
+				default:
+					break;
+			}
+		}
+
+		draw_box(0, 0);
+		draw_dots(0, 0, 1);
+		draw_box(0, 1);
+		draw_dots(0, 1, 2);
+		draw_box(0, 2);
+		draw_dots(0, 2, 3);
+		draw_box(1, 0);
+		draw_dots(1, 0, 4);
+		draw_box(1, 1);
+		draw_dots(1, 1, 5);
+		draw_box(1, 2);
+		draw_dots(1, 2, 6);
+	</script>
+</body>
+</html>

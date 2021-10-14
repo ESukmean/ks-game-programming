@@ -785,14 +785,14 @@ void screen_new::switch_to_main_screen(Game* state) {
 	state->current_screen = new screen_opening();
 	delete this;
 
-	while (getchar() != -1); // 버퍼에 남아있는것 제거
+	clear_stdin();
 }
 void screen_survey::switch_to_main_screen(Game* state) {
 	state->inputs.set_mode_getkey();
 	state->current_screen = new screen_opening();
 	delete this;
 
-	while (getchar() != -1); // 버퍼에 남아있는것 제거
+	clear_stdin();
 }
 void screen_survey::render(Game* state) {
 	this->menu.render(this);
