@@ -20,6 +20,7 @@ void survey_input(void)
 	int i, answer[20], count;
 	char yn, question[10][100], space[10];
 	FILE *fpw;
+
 	count=survey_question_read(question, space);
 	fpw=fopen("조사결과.txt", "a");
 	do

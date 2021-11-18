@@ -1,9 +1,7 @@
-#include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
 #include <algorithm>
 #include <stdio.h>
-#include <termios.h>
 #include <wchar.h>
 #include <time.h>
 
