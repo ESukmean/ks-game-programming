@@ -1,0 +1,362 @@
+<html>
+
+<head>
+	<title>짝맞추기 게임 - 2017648070</title>
+	<meta charset="utf-8">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.1/css/bootstrap.min.css"
+		integrity="sha512-T584yQ/tdRR5QwOpfvDfVQUidzfgc2339Lc8uBDtcp/wYu80d7jwBgAxbyMh0a9YM9F8N3tdErpFI8iaGx6x5g=="
+		crossorigin="anonymous" referrerpolicy="no-referrer" />
+	<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet"> 
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"
+	integrity="sha512-894YE6QWD5I59HgZOGReFYm4dnWc1Qt5NtvYSaNcOP+u1T9qYdvdihz0PPSiiqn/+/3e7Jo4EaG7TubfWGUrMQ=="
+	crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<style>
+		form {
+			width: 330px;
+			margin: 20px;
+			background-color: pink;
+			padding: 20px;
+		}
+
+		input {
+			text-align: right;
+		}
+		* { font-family: 'Noto Sans KR', sans-serif; }
+	</style>
+	<script type="text/javascript">
+		class Queue {
+			constructor() {
+				this._arr = [];
+			}
+			enqueue(item) {
+				this._arr.push(item);
+			}
+			dequeue() {
+				return this._arr.shift();
+			}
+			contains(item) {
+				return this._arr.indexOf(item) !== -1;
+			}
+			length() {
+				return this._arr.length;
+			}
+		}
+
+		var cwidth = 900;
+		var cheight = 400;
+		var ctx;
+		var firstpick = true;
+		var firstcard = -1;
+		var secondcard;
+		var backcolor = "rgb(128,0,128)";
+		var tablecolor = "rgb(255,255,255)";
+		var deck = [];
+		var firstsx = 30;
+		var firstsy = 50;
+		var margin = 30;
+		var cardwidth = 100;
+		var cardheight = 100;
+		var matched;
+		var starttime;
+		var count = 0;
+		var pairs = [
+			["allison1.jpg", "allison2.jpg"],
+			["grant1.jpg", "grant2.jpg"],
+			["liam1.jpg", "liam2.jpg"],
+			["aviva1.jpg", "aviva2.jpg"],
+			["daniel1.jpg", "daniel2.jpg"]
+		];
+		var card_back = new Image();
+		card_back.src = 'card-back.jpg';
+		var stopwatch;
+		var stopwatch_tick = 0;
+		var tries = 0;
+		var result_table = localStorage['result_table'];
+		if (typeof result_table === 'undefined' || result_table === null) {
+			result_table = []
+		} else {
+			result_table = JSON.parse(result_table);
+			$(document).ready(function() { draw_table(); });
+		}
+		const queue = new Queue();
+
+
+		//deck holds info on the cards: the location and dimensions, the src for the picture
+		// and identifying info
+		//the info is set using the array of arrays in the makedeck function
+
+		function draw_table() {
+			result_table.sort((a, b) => {
+                return a.time < b.time ? -1 : 1;
+            });
+
+			let trow = [];
+			let index = 1;
+			result_table.forEach(e => {
+				trow.push(`<tr><td>${index}</td><td>${e.time}</td><td>${e.tries}</td><td>${e.starttime}</td></tr>`);
+				index += 1
+			});
+
+			$('#result_table').html(`
+			<table class="table">
+				<thead>
+					<tr>
+					<th scope="col">순위</th>
+					<th scope="col">소요시간</th>
+					<th scope="col">시도횟수</th>
+					<th scope="col">시작 시간</th>
+					</tr>
+				</thead>
+				<tbody>
+					${trow.join('')}
+				</tbody>
+				</table>
+			`);
+		}
+
+		function Card(sx, sy, swidth, sheight, img, info) {
+			this.sx = sx;
+			this.sy = sy;
+			this.swidth = swidth;
+			this.sheight = sheight;
+			this.info = info;
+			this.img = img;
+			this.draw = drawback;
+		}
+
+		//generate deck of cards 6 pairs of polygons
+		function makedeck() {
+			var i;
+			var acard;
+			var bcard;
+			var pica;
+			var picb;
+			var cx = firstsx;
+			var cy = firstsy;
+			for (i = 0; i < pairs.length; i++) {
+				pica = new Image();
+				pica.src = pairs[i][0];
+				acard = new Card(cx, cy, cardwidth, cardheight, pica, i);
+				deck.push(acard);
+				picb = new Image();
+				picb.src = pairs[i][1];
+				bcard = new Card(cx, cy + cardheight + margin, cardwidth, cardheight, picb, i);
+				deck.push(bcard);
+				cx = cx + cardwidth + margin;
+				acard.draw();
+				bcard.draw();
+			}
+
+		}
+
+		function shuffle() {
+			//coded to resemble how I shuffled cards when playing concentration
+			//swaps the changing information: the imgand the info indicating the matching
+			var i;
+			var k;
+			var holderinfo;
+			var holderimg;
+			var dl = deck.length
+			var nt;
+			for (nt = 0; nt < 3 * dl; nt++) {  //do the swap 3 times deck.length times
+				i = Math.floor(Math.random() * dl);
+				k = Math.floor(Math.random() * dl);
+				holderinfo = deck[i].info;
+				holderimg = deck[i].img;
+				deck[i].info = deck[k].info;
+				deck[i].img = deck[k].img;
+				deck[k].info = holderinfo;
+				deck[k].img = holderimg;
+			}
+		}
+
+
+		function drawback() {
+			ctx.drawImage(card_back, this.sx, this.sy, this.swidth, this.sheight);
+		}
+
+
+		function choose(ev) {
+			var out;
+			var mx;
+			var my;
+			var pick1;
+			var pick2;
+			if (ev.offsetX || ev.offsetX == 0) { // Opera
+				mx = ev.offsetX;
+				my = ev.offsetY;
+			}
+
+			var i;
+			for (i = 0; i < deck.length; i++) {
+				var card = deck[i];
+				if (card.sx >= 0)
+					if ((mx > card.sx) && (mx < card.sx + card.swidth) && (my > card.sy) && (my < card.sy + card.sheight)) {
+						// 큐에 있는건지 확인
+						if (queue.contains(i) == false) break;
+					}
+			}
+			if (i < deck.length) {  //clicked on a card
+				queue.enqueue(i);
+				ctx.drawImage(card.img, card.sx, card.sy, card.swidth, card.sheight);
+
+				console.log(queue.length());
+				if (queue.length() % 2 == 0) {
+					tries += 1;
+					setTimeout(flipback, 1000);
+				}
+			}
+		}
+
+		function flipback() {
+			first = queue.dequeue();
+			second = queue.dequeue();
+
+			if (deck[first].info == deck[second].info) {
+				ctx.fillStyle = tablecolor;
+				ctx.fillRect(deck[second].sx, deck[second].sy, deck[second].swidth, deck[second].sheight);
+				ctx.fillRect(deck[first].sx, deck[first].sy, deck[first].swidth, deck[first].sheight);
+				deck[second].sx = -1;
+				deck[first].sx = -1;
+
+				count++;
+				ctx.fillStyle = tablecolor;
+				ctx.fillRect(10, 340, 900, 100);
+				ctx.fillStyle = backcolor;
+				ctx.fillText("현재까지 맞춘 횟수: " + String(count), 10, 360);
+				if (count >= .5 * deck.length) {
+					clearInterval(stopwatch);
+					stopwatch = null;
+
+					var now = new Date();
+					var nt = Number(now.getTime());
+					var seconds = Math.floor(.5 + (nt - starttime) / 1000);
+					ctx.fillStyle = tablecolor;
+					ctx.fillRect(0, 0, 900, 400);
+					ctx.fillStyle = backcolor;
+					out = `게임 완료까지 ${$('#stopwatch').text()} 걸렸습니다.`;
+					ctx.fillText(out, 10, 100);
+					ctx.fillText("다시 하시려면 아래 버튼을 누르세요!!.", 10, 300);
+					result_table.push({time: $('#stopwatch').text(), tries: tries, starttime: starttime.toLocaleString()});
+					localStorage['result_table'] = JSON.stringify(result_table);
+
+					draw_table();
+					return;
+				}
+			} else {
+				deck[first].draw();
+				deck[second].draw();
+			}
+		}
+
+		function init() {
+			if (stopwatch != null) { clearInterval(stopwatch); stopwatch = null; }
+			ctx = document.getElementById('canvas').getContext('2d');
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			deck = [];
+
+			canvas1 = document.getElementById('canvas');
+			canvas1.addEventListener('click', choose, false);
+			makedeck();
+			shuffle();
+			ctx.font = "bold 20pt sans-serif";
+			ctx.fillText("맞춰볼 두 카드를 클릭하세요.", 20, 30);
+			ctx.fillText("현재까지 맞춘 횟수: 0", 10, 360);
+			starttime = new Date();
+			tries = 0;
+			count = 0;
+
+			stopwatch_tick = 0;
+			stopwatch = setInterval(function() {
+				stopwatch_tick++;
+				let min = Math.floor((stopwatch_tick / 10) / 60);
+				let sec = Math.floor((stopwatch_tick / 10) % 60);
+				let ms = stopwatch_tick % 10;
+
+				$('#stopwatch').text(`${min}분 ${sec}.${ms}초`)
+			}, 100);
+		}
+	</script>
+</head>
+
+<body>
+	<nav class="navbar navbar-expand-lg navbar-light bg-light">
+		<div class="container-fluid">
+			<a class="navbar-brand" href="#">기억력 게임</a>
+			<button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+				data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
+				aria-label="Toggle navigation">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="navbarSupportedContent">
+				<ul class="navbar-nav me-auto mb-2 mb-lg-0">
+					<li class="nav-item">
+						<a class="nav-link active" aria-current="page" href="#">게임</a>
+					</li>
+				</ul>
+			</div>
+		</div>
+	</nav>
+	<div class="jumbotron">
+		<div class="container">
+			<h1>기억력 테스트 게임</h1>
+			<h5 class="text-muted" style="margin-top: 20px;">카드를 뒤집으면서 자신의 기억력을 확인해 보세요!</h5>
+		</div>
+	</div>
+	<br>
+	<div class="container">
+		<div id="start_info" style="text-align: center">
+			<p>아래 시작버튼을 누르면 게임이 시작됩니다.</p>
+			<button class="btn btn-primary" style="width: 120px" data-cmd="start">시작</button>
+			<button class="btn btn-warning" style="width: 120px" data-cmd="clear">점수 초기화</button>
+		</div>
+		<div id="play_box" style="display: none">
+			<canvas id="canvas" width="900" height="400" style="margin: 0 auto; display: block">
+				이 브라우저는 HTML5의 canvas 요소를 지원하지 않습니다.
+			</canvas>
+			<br>
+			<div style="width: 850px; margin: 0 auto">
+				<p>소요시간: <span id="stopwatch"></span></p>
+				<button class="btn btn-danger" style="width: 300px">게임 다시하기</button>
+			</div>
+		</div>
+		<div style="text-align: center">
+			<br><br><br><hr><br><br><br>
+			<h3>점수표</h3>
+			<br>
+			<div id="result_table">
+				<p>아직 플레이 하지 않았습니다!</p>
+			</div>
+		</div>
+		<br><br><br><br><br>
+	</div>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.1/js/bootstrap.min.js"
+		integrity="sha512-UR25UO94eTnCVwjbXozyeVd6ZqpaAE9naiEUBK/A+QDbfSTQFhPGj5lOR6d8tsgbBk84Ggb5A3EkjsOgPRPcKA=="
+		crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+	<script>
+		$('button').click(function() {
+			let el = $(this);
+			if (el.data('cmd') == 'clear') {
+				localStorage.clear();
+				location.reload(true);
+			} else if (el.data('cmd') == 'start') {
+				init();
+				
+				$('#start_info').hide();
+				$('#play_box').show();
+			} else {
+				$('#start_info').show();
+				$('#play_box').hide();
+
+				clearInterval(stopwatch);
+				stopwatch = null;
+			}
+		})
+	</script>
+</body>
+
+</html>
