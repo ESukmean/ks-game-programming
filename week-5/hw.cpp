@@ -4,11 +4,18 @@
 #include <stdio.h>
 #include <wchar.h>
 #include <time.h>
-
+#include <iostream>
+#include <filesystem>
+#include <locale.h>	
+#include <fstream>
+#include <codecvt>
 
 class Frame;
 class Component;
 class Screen;
+class screen_new;
+class screen_opening;
+class screen_survey;
 class Game;
 class ringbuffer;
 
@@ -16,9 +23,27 @@ const int NORMAL = 0;
 const int NOOP = 10;
 const int TERMINATE = -10;
 
-const int WIDTH = 189;
-const int HEIGHT = 50;
+const int WIDTH = 237;
+const int HEIGHT = 63;
 
+static int clear_stdin() {
+	auto original = fcntl(STDIN_FILENO, F_GETFL);	
+	fcntl(STDIN_FILENO, F_SETFL,  original | O_NONBLOCK);
+	
+	while (getchar() != -1);
+
+	fcntl(STDIN_FILENO, F_SETFL, original);
+}
+static int escape_key(int k) {
+	if (k == -1 || (k & 1792768) != 1792768)  return -1;
+	return k & 255;
+}
+static void beep_alert() {
+	printf("\a");
+}
+static void gotoConsole(int x, int y) {
+	printf("\033[%d;%dH", y, x);
+}
 class Frame {
 public:
 	virtual int process(Game*) {}
@@ -43,7 +68,17 @@ class ringbuffer {
 			this->pos_end = this->inner + capacity;
 			this->cur_write = this->cur_read = this->inner;
 
-			// ÀÎÇ²¿¡ ¿µÇâÀ» ¹ŞÀ¸¸é ¾ÈµÇ´Ï±î stdinÀ» ³Íºí·°Å·À¸·Î ¼³Á¤
+			set_mode_getkey();
+		}
+		~ringbuffer() {
+			delete[] this->inner;
+			delete[] this->put_buf;
+		}
+
+		void set_mode_getkey() {
+			printf("\e[?25l");
+
+			// ì¸í’‹ì— ì˜í–¥ì„ ë°›ìœ¼ë©´ ì•ˆë˜ë‹ˆê¹Œ stdinì„ ë„Œë¸”ëŸ­í‚¹ìœ¼ë¡œ ì„¤ì •
 			struct termios oldSettings, newSettings;
 			tcgetattr( fileno( stdin ), &oldSettings );
 			newSettings = oldSettings;
@@ -52,10 +87,18 @@ class ringbuffer {
 
 			fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
 		}
-		~ringbuffer() {
-			delete[] this->inner;
-			delete[] this->put_buf;
+		void set_mode_echo() {
+			printf("\e[?25h");
+
+			struct termios oldSettings, newSettings;
+			tcgetattr( fileno( stdin ), &oldSettings );
+			newSettings = oldSettings;
+			newSettings.c_lflag |= (ICANON | ECHO);
+			tcsetattr( fileno( stdin ), TCSANOW, &newSettings );    
+
+			fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK);
 		}
+		
 
 		void stdin_read() {
 			int result = 0;
@@ -84,7 +127,7 @@ class ringbuffer {
 			return this->capacity - this->buffer_avilable();
 		}
 		// char* put_arr() {
-		// 	// 0À¸·Î ÃÊ±âÈ­(Á¤¸®)ÈÄ ´øÁ®ÁÜ.
+		// 	// 0ìœ¼ë¡œ ì´ˆê¸°í™”(ì •ë¦¬)í›„ ë˜ì ¸ì¤Œ.
 		// 	memset(this->put_buf, NULL, this->capacity);
 		// 	return this->put_buf;
 		// }
@@ -94,30 +137,38 @@ class ringbuffer {
 			// printf("read %s", this->put_buf);
 			// printf("read_len %d\n", read_len);
 
-			// if (read_len > this->buffer_avilable()) { ¹öÆÛ ¼ö¿ë·® ÀÌ»óÀ¸·Î µé¾î¿À¸é ¸¶Áö¸·Àº ±×³É drop ÇÏµµ·Ï ÇÔ. ¾Æ·¡¿¡¼­ ¹Ù¿î´õ¸® Ã¼Å© ÇÊ¿ä }
+			// if (read_len > this->buffer_avilable()) { ë²„í¼ ìˆ˜ìš©ëŸ‰ ì´ìƒìœ¼ë¡œ ë“¤ì–´ì˜¤ë©´ ë§ˆì§€ë§‰ì€ ê·¸ëƒ¥ drop í•˜ë„ë¡ í•¨. ì•„ë˜ì—ì„œ ë°”ìš´ë”ë¦¬ ì²´í¬ í•„ìš” }
 			if (this->cur_read < this->cur_write) {
 				int tail_length = (this->pos_end - this->cur_write);
 				int tail_to_write = std::min(tail_length, read_len * (int)sizeof(int));
 				memcpy(this->cur_write, this->put_buf, tail_to_write);
 
 				if (tail_to_write < read_len) {
-					// ¾µ °Ô ´õ ³²¾Ò´Ù¸é...
+					// ì“¸ ê²Œ ë” ë‚¨ì•˜ë‹¤ë©´...
 					int head_to_write = std::min((read_len - tail_to_write) * (int)sizeof(int), (int)(this->cur_read - this->inner));
 					memcpy(this->inner, this->put_buf + tail_to_write, head_to_write);
 
 					this->cur_write = this->inner + head_to_write / sizeof(int);
 				} else {
-					// µÚÂÊ¿¡ ¾´°Å·Î ³¡ÀÌ¸é
+					// ë’¤ìª½ì— ì“´ê±°ë¡œ ëì´ë©´
 					this->cur_write += tail_to_write / sizeof(int);
 					if (this->cur_write == this->pos_end) this->cur_write = this->inner;
 				}
 			} else {
 				int avilable = this->buffer_avilable();
 				int length = std::min(read_len, avilable > 0 ? avilable : this->capacity);
-				memcpy(this->cur_write, this->put_buf, length * sizeof(int));
+
+				int tail_left = this->pos_end - this->cur_write;
+				memcpy(this->cur_write, this->put_buf, sizeof(int) * std::min(tail_left, length));
+
+				if (tail_left <= length) {
+					length -= tail_left;
+
+					this->cur_write = this->inner;
+					memcpy(this->cur_write, this->put_buf + tail_left, sizeof(int) * length);
+				} 
 
 				this->cur_write += length;
-				// printf("cur advanced %d\n", this->cur_write - this->inner); 
 			}
 
 			if(this->cur_read == this->cur_write) {
@@ -135,18 +186,78 @@ class ringbuffer {
 				// printf("%#04x() ", *cur);
 				cur++;
 
-				if (cur == this->pos_end + 1) cur = this->inner;
+				if (cur == this->pos_end) cur = this->inner;
 			}
 			// printf("\n");
+		}
+
+		int get_ch() {
+			int length = this->buffer_length();
+			if (length == 0) return -1;
+
+			int result = *this->cur_read;
+
+			if ((char)result == '\e' && length >= 3) {
+				int check_arr[2] = {0, 0};
+				for (int i = 0; i < 2; i++) {
+					this->cur_read++;
+					if (this->cur_read == this->pos_end) { this->cur_read = this->inner; }
+
+					check_arr[i] = *this->cur_read;
+				}
+
+				if ((char)check_arr[0] == '[') {
+					result = '\e';
+					result = result << 8;
+					result += (char)check_arr[0];
+					result = result << 8;
+					result += (char)check_arr[1];
+					// printf("-->%d %d\n", check_arr[0], check_arr[1]);
+				}
+			}			
+
+			this->cur_read++;
+			if (this->is_full) this->is_full = false;
+			if (this->cur_read == this->pos_end) this->cur_read = this->inner;
+
+			return result;
+		}
+		int peek_ch() {
+			int length = this->buffer_length();
+
+			if (length == 0) return -1;
+			int result = *this->cur_read;
+
+			if ((char)result == '\e' && length >= 3) {
+				int check_arr[2] = {0, 0};
+				int* cur_tmp = this->cur_read;
+				for (int i = 0; i < 2; i++) {
+					cur_tmp++;
+					if (cur_tmp == this->pos_end) { this->cur_read = this->inner; }
+					check_arr[i] = *cur_tmp;
+				}
+
+				if ((char)check_arr[0] == '[') {
+					result = '\e';
+					result = result << 8;
+					result += (char)check_arr[0];
+					result = result << 8;
+					result += (char)check_arr[1];
+				}
+			}
+
+			return result;
 		}
 };
 
 class Screen {
 public:
-	wchar_t* framebuffer; // multi-byte ¹®ÀÚ¿­ °í·Á
+	wchar_t* framebuffer; // multi-byte ë¬¸ìì—´ ê³ ë ¤
 	Screen() {
 		this->framebuffer = new wchar_t[WIDTH * HEIGHT];
 		clear();
+
+		setlocale(LC_ALL, "");
 	}
 	~Screen() {
 		delete[] this->framebuffer;
@@ -155,7 +266,7 @@ public:
 	void clear(int x, int y, int width, int height) {
 		for (int h = 0; h < height; h++) {
 			for (int w = 0; w < width; w++) {
-				framebuffer[(h + y) * WIDTH + w + x] = *L" ";
+				framebuffer[(h + y) * WIDTH + w + x] = L' ';
 			}
 		}
 	}
@@ -173,9 +284,9 @@ public:
 
 	}
 	virtual void render(Game* state) {
-		printf("\033[0;0H");
-		for (int h = 0; h < 24; h++) {
-			printf("%.*S\n", 180, this->framebuffer + (WIDTH * h));
+		gotoConsole(0, 0);
+		for (int h = 0; h < HEIGHT; h++) {
+			printf("%.*S\n", WIDTH, this->framebuffer + (WIDTH * h));
 		}
 	}
 };
@@ -193,14 +304,14 @@ class Component : public Frame {
 		}
 		virtual int process(Screen* scrn) {}
 		virtual void render(Screen* scrn) {}
+		virtual bool keyinput(Screen* scrn, int keycode) { return false; }
 };
 class component_header : public Component {
 	private:
 		int tick = 5;
 		int reverse = 0;
 
-		wchar_t* header = L"             /@@@@@@/             @@@@@&%/           #@@@@@@@@@@@&#/*.                  .@@@@@@@@@@@@@@@@@@@@@&#                @@@@@@%.           @@@@@%#                \n            &@@@@@@@@             @@@@@@@*           &@@@@@@@@@@@@@@@@@@@@@                    .@@@@@@@@@@@@@@@/              ,@@@@@@@@,          .@@@@@@@                \n           @@@@@@@@%              @@@@@@@            @@@@@@@#      /@@@@@@@                   (@@@@@@@@                      #@@@@@@@@            (@@@@@@@                \n         .@@@@@@@@,    .@%*      ,@@@@@@@            @@@@@@@*      %@@@@@@@                  @@@@@@@@@                      @@@@@@@@@             &@@@@@@@                \n        (@@@@@@@@@@@.  &@@@@@@@@@@@@@@@@@            @@@@@@@.      &@@@@@@%                 @@@@@@@@@@@.                   @@@@@@@@@@@%           @@@@@@@@@@@@@@@@        \n       @@@@@@@@@@@@@@@@#         @@@@@@@@           ,@@@@@@@       @@@@@@@/               ,@@@@@@@@@@@@@@@/              ,@@@@@@@@(@@@@@@@        @@@@@@@, .,*#@@@        \n      @@@@@@@@#    /@@@@@@@      @@@@@@@#           #@@@@@@@       @@@@@@@,              #@@@@@@@@    (@@@@@@@          %@@@@@@@@     @@@@@@@,    @@@@@@@.                \n    ,@@@@@@@@,        .@@@@@     @@@@@@@,           &@@@@@@@%@@@@@@@@@@@@@              @@@@@@@@@        ,@@@@@/       @@@@@@@@&         %@@@@,  ,@@@@@@@                 \n     .%@@@@@                     @@@@@@@            @@@@@@@@@@@@@@%#(.                  /@@@@@@#@@@@@@@*                (@@@@@/                  #@@@@@@@                 \n                        @@&(,,   %%&&@@@                       ..,,*/%&@@@@@                    @@@@@@@                                          /%%&@@@&                 \n                        @@@@@@@@@@@@@@@@@@@@,      (@@@@@@@@@@@@@@@@@@@@@@@@.                  ,@@@@@@@&@@@@@@@@                                                          \n                                     @@@@@@@.               @@@@@@@                    .@@@@@@@@@@@@@@@@@@@@@@@@*                                                         \n                                    ,@@@@@@@         &&#/. (@@@@@@@                                                                                                       \n                        *@@@@@@@@@@@@@@@@@@@        ,@@@@@@@                                                                                                              \n                        %@@@@@@@     ..,,***        #@@@@@@@                                                                                                              \n                        @@@@@@@@                    &@@@@@@&                                                                                                              \n                        @@@@@@@#/%@@@@@@@@@@@@.     @@@@@@@(     .,,*//(%&(                                                                                               \n                        @@@@@@@@@@@@@@&%%/.         @@@@@@@@@@@@@@@@@@@@@@@                                                                                               \n                                                                                                                                                                          \n                                                                                                                                                                          \n                                                                                                                                                                          \n";
-
+		wchar_t* header = L"                                                                                                                       @@@                       @@%(,                 .@@@&#(/*.                @@@                                @@@@@#        @@@@@       .@@@@(/&@@@@@@@             @@@@@%,,/%          @@@@@%       @@@@@                 @@@@@          @@@@@       (@@@@     @@@@&            @@@@@               @@@@@         @@@@@               #@@@@@@@@ ,&@@@@@@@@@&       @@@@@     @@@@*          #@@@@@@@(           #@@@@@@@@       @@@@@@@@@@         @@@@@@  %@@@@    .@@@@*       @@@@@    #@@@@          @@@@@@  @@@@@       @@@@@@  #@@@@   /@@@@.             @@@@@/      .@@   (@@@@        @@@@@@@@@@@@@@         @@@@@@@%(/  #@@     @@@@@(       @@  &@@@@                           #/   &@@@@                  ./##%             @@@@@                           &@@@@                              ,/@@@@@@@@    ,@@@@@@@@@@@@           @@@@@@@@@@@@@@@@                                                             @@@@@            @@*                                                                                  @@@@@@@@@@@@(     @@@@@                                                                                       @@@@@             @@@@@                                                                                      .@@@@@@@@@@@@@@    @@@@@@@@@@@@@@#                                                                                                                                                                           ";
 	public:
 		component_header(int x, int y, int width, int height) : Component(x, y, width, height) {}
 		int process(Screen* scrn) {
@@ -214,38 +325,389 @@ class component_header : public Component {
 		}
 		void render(Screen* scrn) {
 			int pos_y = tick / 2;
-			scrn->clear(0, 0, 170, 24);
-			for (int h = 0; h < 24; h++) {
-				scrn->fill(0, h + pos_y, 170, header + (170 * h));
+			scrn->clear(0, 0, WIDTH, height);
+			for (int h = 0; h < 15; h++) {
+				scrn->fill(WIDTH / 2 - (this->width / 2), h + pos_y + 3, 110, header + (110 * h));
 			}
 		}
 };
+class component_box : public Component {
+private:
+	bool display_side = true;
+public:
+	component_box(int x, int y, int width, int height) : Component(x, y, width, height) {}
+	~component_box() {}
+	int process(Screen* scrn) {
+		
+	}
+	void render(Screen* scrn) {
+		for (int w = 0; w < this->width; w++) {
+			scrn->framebuffer[(WIDTH * y) + (x + w)] = L'-';
+			scrn->framebuffer[(WIDTH * (y + height)) + (x + w)] = L'-';
+		}
+		if (this->display_side) {
+			for (int h = 0; h < this->height; h++) {
+				scrn->framebuffer[(WIDTH * (h + y)) + x] = L'â”‚';
+				scrn->framebuffer[(WIDTH * (h + y)) + (x + width)] = L'â”‚';
+			}
+		}
+
+		scrn->framebuffer[(WIDTH * y) + x] = L'â”Œ';
+		scrn->framebuffer[(WIDTH * y) + x + width] = L'â”';
+		scrn->framebuffer[(WIDTH * (height + y)) + x] = L'â””';
+		scrn->framebuffer[(WIDTH * (height + y)) + x + width] = L'â”˜';
+	}
+
+	void enable_sidedisplay(bool enabled) {
+		this->display_side = enabled;
+	}
+};
+class component_list : public Component {
+public:
+	wchar_t** list;
+	int show_start;
+	int show_end;
+	int pos = 0;
+	int length = 0;
+	void refresh_list() {
+		namespace fs = std::filesystem;
+		std::string path = "./question/";
+		
+		if (length > 0) {
+			for (int i = 1; i < length; i++) {
+				delete list[i];
+			}
+			delete list;
+		}
+
+		list = new wchar_t*[100];
+		list[0] = L"ìƒˆë¡œ ë§Œë“¤ê¸°...";
+
+		int index = 1;
+		for (const auto & entry : fs::directory_iterator(path)) {
+			auto path = entry.path().u16string();
+			if (path.length() <= 2) continue;
+
+			std::wstring wpath;
+			wpath.assign(path.begin(), path.end());
+
+			wchar_t* ws_cloned = new wchar_t[wpath.length()];
+			wcpcpy(ws_cloned, wpath.c_str() + 11);
+
+			list[index++] = ws_cloned;
+
+			if (index == 100) break;
+		}
+
+		length = index;
+		if (pos > length) pos = length - 1;
+		if (show_end >= length) { show_end = (show_start + height) > length ? length : show_start + height; }
+
+	}
+	component_list(int x, int y, int width, int height) : Component(x, y, width, height) {
+		refresh_list();
+
+		show_end = std::min(height, length);
+	}
+	~component_list() {
+		for (int i = 1; i < length; i++) {
+			delete list[i];
+		}
+
+		delete list;
+	}
+	bool keyinput(Screen* scrn, int keycode) { 
+		switch (escape_key(keycode)) {
+			case 'A': // up
+				if (pos <= 0) { 
+					pos = 0;
+					beep_alert();
+					break;
+				}
+
+				pos--;
+				if (show_start > pos) {
+					show_start -= 1;
+					show_end -= 1;
+				}
+				break;
+
+			case 'B': // down
+				if (pos >= (length - 1)) {
+					pos = length - 1;
+					beep_alert();
+					break;
+				}
+
+				pos++;
+				if (show_end <= pos) {
+					show_start += 1;
+					show_end += 1;
+				}
+				break;
+			default:
+				beep_alert();
+		}
+	}
+	int process(Screen* scrn) {
+
+	}
+	void render(Screen* scrn) {
+		scrn->clear(x, y, width, height);
+
+		for (int h = 0; h < std::min(height, this->show_end - this->show_start); h++) {
+			if (this->show_start + h == this->pos) 
+				scrn->framebuffer[WIDTH * (y + h) + x + 2] = L'@';
+
+			int length = wcslen(this->list[this->show_start + h]);
+			scrn->fill(x + 5, y + h, length, this->list[this->show_start + h]);
+
+			wchar_t* null_pos = scrn->framebuffer + (WIDTH * (y + h) + x + 5 + length);
+			*null_pos = L' ';
+		}
+	}
+	wchar_t* get_selected() {
+		int strlen = wcslen(this->list[this->pos]);
+		wchar_t* cloned = new wchar_t[strlen + 1];
+		wcscpy(cloned, this->list[this->pos]);
+
+		return cloned;
+	}
+	int get_selected_pos() {
+		return this->pos;
+	}
+};
+class component_line : public Component {
+public:
+	component_line(int x, int y, int width, int height) : Component(x, y, width, height) {}
+
+	int process(Screen* scrn) {}
+	void render(Screen* scrn) {
+		for (int h = 0; h < this->height; h++) {
+			for (int w = 0; w < this->width / 4; w++) {
+				scrn->framebuffer[(WIDTH * (y + h)) + (x + w)] = L'â– ';
+			}
+		}
+	}
+};
+class component_text : public Component {
+wchar_t* msg = 0;
+wchar_t* alert = 0;
+int alert_tick = 20;
+public:
+	component_text(int x, int y, int width, int height) : Component(x, y, width, height) {
+
+	}
+	~component_text() {
+		if (this->msg != 0) delete this->msg;
+		if (this->alert != 0) delete this->alert;
+	}
+
+	int process(Screen* scrn) {
+		if(alert_tick < 20) alert_tick++;
+	}
+	void render(Screen* scrn) {
+		scrn->clear(x, y, width, height);
+
+		if (alert_tick < 20 && this->alert != 0) {
+			scrn->fill(x, y, std::min(this->width, (int)wcslen(this->alert)), this->alert);
+		} else if(this->msg != 0) {
+			scrn->fill(x, y, std::min(this->width, (int)wcslen(this->msg)), this->msg);
+		}
+	}
+
+	void set_msg(wchar_t* msg) {
+		if (this->msg != 0) delete this->msg;
+		this->msg = msg;
+	}
+	void set_alert(wchar_t* alert) {
+		if (this->alert != 0) delete this->alert;
+		this->alert = alert;
+		this->alert_tick = 0;
+	}
+
+	static wchar_t* from_const(wchar_t* const msg_const) {
+		wchar_t* msg = new wchar_t[wcslen(msg_const) + 1];
+		wcscpy(msg, msg_const);
+
+		return msg;
+	}
+};
 class screen_opening : public Screen {	
 private:
-	component_header header = component_header(0, 0, 180, 35);
-
+	component_header header = component_header(0, 0, 110, 27);
+	component_box box = component_box(WIDTH / 2 - 100, 28, 200, HEIGHT - 30);
+	component_list list = component_list(WIDTH / 2 - 99, 29, 198, HEIGHT - 32);
+	component_text txt1 = component_text(WIDTH / 2 - 99, HEIGHT - 1, 100, 1);
+	// component_line line = component_line(10, 10, 10, 10);
 public:
-	int process(Game* state) {
-		this->header.process(this);
+	screen_opening() {
+		this->txt1.set_msg(this->txt1.from_const(L"ì‘ë‹µí•  ì„¤ë¬¸ì„ ì„ íƒí•˜ê±°ë‚˜ ìƒˆë¡œ ë§Œë“¤ì–´ì£¼ì„¸ìš” (ì—”í„°: ì„ íƒ. D: ì‚­ì œ, í™”ì‚´í‘œ: ì´ë™), Që¥¼ ëˆ„ë¥´ë©´ ì¢…ë£Œí•©ë‹ˆë‹¤."));
 
+		this->box.enable_sidedisplay(false);
 	}
+
 	void render(Game* state) {
 		this->header.render(this);
+		this->box.render(this);
+		this->list.render(this);
+		this->txt1.render(this);
 		Screen::render(state);
 	}
-
+	int process(Game* state);
 };
 
+class screen_survey : public Screen {
+private:
+	wchar_t* filename;
+public:
+	component_text menu = component_text(1, 1, 100, 1);
+	component_text menu2 = component_text(10, 1, 100, 1);
+	component_text spilter = component_text(0, 3, 100, 1);
+	screen_survey(wchar_t* selected) {
+		this->filename = selected;
+		menu.set_msg(menu.from_const(L"ì„¤ë¬¸ì¡°ì‚¬ : "));
+		menu2.set_msg(selected);
+		spilter.set_msg(menu.from_const(L"=========================================="));
+	}
+
+	int process(Game * state) {
+
+	}
+	void render(Game * state);
+	void enter_blocking(Game* state) {
+		std::wstring_convert<std::codecvt_utf8<wchar_t>> myconv;
+		
+		auto fpr = fopen(std::string("./question/").append(myconv.to_bytes(this->filename)).c_str(), "r");
+		char** question = new char*[10];
+		int count = 0;
+		int max_question = 10;
+		while(!feof(fpr))
+		{
+			char* chr = (char*)malloc(sizeof(char) * 502);
+			if(fgets(chr, 500, fpr) == 0) break;
+
+			question[count] = chr;
+			int pos_newline = strlen(question[count]) - 1;	
+			question[count][pos_newline] = L' ';
+			count++;
+			
+			if (count == max_question) {
+				question = (char**)realloc(question, max_question * sizeof(char*) * 2);
+				max_question *= 2;
+			}
+		}
+		fclose(fpr);
+		
+		gotoConsole(0, 7);
+		printf("\tì„¤ë¬¸ì€ ì´ %dê°œ ë¬¸í•­ì…ë‹ˆë‹¤.\n\tì„¤ë¬¸ì€ ìˆ«ìë¡œë§Œ ì‘ë‹µí•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.\n\n\n\n", count);
+		
+		int* answer = new int[count];
+
+		for (int i = 0; i < count; i++) {
+			printf("\t ë¬¸í•­ %d) %s : \n", i + 1, question[i]);
+		}
+		gotoConsole(0, 12);
+		for(int i = 0; i < count; i++) {
+			printf("\t ë¬¸í•­ %d) %s : ", i + 1, question[i]);
+			scanf("%d", answer + i);
+
+			clear_stdin();
+		}
+		
+		printf("\n\n\tì‘ë‹µì„ ì €ì¥í•˜ê³  ìˆìŠµë‹ˆë‹¤...");
+		
+		auto answer_file_path = std::string("./answer/").append(myconv.to_bytes(this->filename));
+		auto answer_file = fopen(answer_file_path.c_str(), "a");
+		for (int i = 0; i < count; i++) {
+			fprintf(answer_file, "%d ", answer[i]);
+		}
+		fprintf(answer_file, "\n");
+		fflush(answer_file);
+
+		printf("\n\n\tì‘ë‹µì´ ì™„ë£Œë˜ì—ˆìŠµë‹ˆë‹¤. ê°ì‚¬í•©ë‹ˆë‹¤.\n");
+		fclose(answer_file);
+		usleep(1500 * 1000);
+
+		for (int i = 0; i < count; i++) {
+			delete question[i];
+		}
+		delete question;
+		delete[] answer;
+
+		switch_to_main_screen(state);
+	}
+	void switch_to_main_screen(Game* state);
+};
+
+class screen_new : public Screen {
+public:
+	component_text menu = component_text(1, 1, 100, 1);
+	component_text spilter = component_text(0, 3, 100, 1);
+
+	screen_new() {
+		menu.set_msg(menu.from_const(L"ì„¤ë¬¸ì¡°ì‚¬ ìƒˆë¡œ ë§Œë“¤ê¸°"));
+		spilter.set_msg(menu.from_const(L"=========================================="));
+	}
+
+	int process(Game * state) {
+
+	}
+	void render(Game * state);
+	void enter_blocking(Game* state) {
+		char* name = new char[250];
+		gotoConsole(3, 10);
+		printf(" - ì„¤ë¬¸ì¡°ì‚¬ ëª…ì„ ì…ë ¥í•´ì£¼ì„¸ìš”: ");
+		scanf("%s", name);
+
+		int length = 0;
+		gotoConsole(3, 11);
+		printf(" - ì´ ë¬¸í•­ìˆ˜ë¥¼ ì…ë ¥í•´ì£¼ì„¸ìš”: ");
+		scanf("%d", &length);
+		
+
+		clear_stdin();
+
+		printf("\n\n");
+		char** survey = new char*[length];
+		for (int i = 0; i < length; i++) {
+			survey[i] = (char*)malloc(sizeof(char) * 501);
+
+			printf("\t * %dë²ˆ ë¬¸í•­ì„ ì…ë ¥í•´ ì£¼ì„¸ìš”: ", i + 1);
+			fgets(survey[i], 500, stdin);
+			
+			clear_stdin();
+		}
+		
+		printf("\n\n\tìƒì„±ì¤‘ì…ë‹ˆë‹¤....");
+
+		std::string path("./question/");
+		path.append(name);
+
+		std::ofstream ofs(path.c_str(), std::ios_base::binary | std::ios_base::out | std::ios_base::trunc);
+		for (int i = 0; i < length; i++) {
+			ofs << survey[i];
+		}
+
+		ofs.close();
+
+		printf("\n\n\tì„¤ë¬¸ì¡°ì‚¬ê°€ ìƒì„±ë˜ì—ˆìŠµë‹ˆë‹¤.");
+		usleep(1000 * 1000);
+
+		switch_to_main_screen(state);
+	}
+	void switch_to_main_screen(Game* state);
+};
 class Game {
 private:
-	int lastloop_ts = 0; // input°ú process¿¡ ÀÇÇØ¼­ ½Ã°£ Áö¿¬ÀÌ »ı±æ ¼ö ÀÖÀ½. ·çÇÁ ½ÇÇà timestamp¸¦ ÀÌ¿ëÇØ¼­ sleep ±â°£À» º¸Á¤ÇÔ.
+	int lastloop_ts = 0; // inputê³¼ processì— ì˜í•´ì„œ ì‹œê°„ ì§€ì—°ì´ ìƒê¸¸ ìˆ˜ ìˆìŒ. ë£¨í”„ ì‹¤í–‰ timestampë¥¼ ì´ìš©í•´ì„œ sleep ê¸°ê°„ì„ ë³´ì •í•¨.
 	int inputs_len = 0;
-	ringbuffer inputs = ringbuffer(1024); // ºñµ¿±â·Î Ã³¸®ÇÒ °ÍÀÌ±âµµ ÇÏ°í, frameÀÇ ÀüÈ¯¿¡¼­µµ ÀÔ·ÂÀ» À¯½ÇÇÏÁö ¾Ê°Ô µû·Î input ¹öÆÛ¸¦ °¡Áö°Ô ÇÔ. ÀÌ°É·Î ÀÔ·Â Ã³¸®¸¦ ÇØ¾ßÇÔ
-	Screen* current_screen; // È­¸é Ã³¸®ÀÇ ÃÖ´ë´ÜÀ§. DPÀÇ Àü·«ÆĞÅÏÀ» ÀÌ¿ëÇÒ °ÍÀÓ. frame ¾Æ·¡¿¡¼­ Á÷Á¢ ´ÙÀ½ screenÀ» ¼öÁ¤ÇÒ ¼öµµ ÀÖÀ½À» ÁÖÀÇ
-
-	int state = NORMAL; // ÇöÀç °ÔÀÓÀÇ ÀüÃ¼»óÅÂ
 
 public:
+	int state = NORMAL; // í˜„ì¬ ê²Œì„ì˜ ì „ì²´ìƒíƒœ
+	Screen* current_screen; // í™”ë©´ ì²˜ë¦¬ì˜ ìµœëŒ€ë‹¨ìœ„. DPì˜ ì „ëµíŒ¨í„´ì„ ì´ìš©í•  ê²ƒì„. frame ì•„ë˜ì—ì„œ ì§ì ‘ ë‹¤ìŒ screenì„ ìˆ˜ì •í•  ìˆ˜ë„ ìˆìŒì„ ì£¼ì˜
+	ringbuffer inputs = ringbuffer(32); // ë¹„ë™ê¸°ë¡œ ì²˜ë¦¬í•  ê²ƒì´ê¸°ë„ í•˜ê³ , frameì˜ ì „í™˜ì—ì„œë„ ì…ë ¥ì„ ìœ ì‹¤í•˜ì§€ ì•Šê²Œ ë”°ë¡œ input ë²„í¼ë¥¼ ê°€ì§€ê²Œ í•¨. ì´ê±¸ë¡œ ì…ë ¥ ì²˜ë¦¬ë¥¼ í•´ì•¼í•¨
+
 	Game() {
 		this->current_screen = new screen_opening();
 	}
@@ -276,6 +738,77 @@ public:
 	}
 };
 
+int screen_opening::process(Game* state) {
+	this->header.process(this);
+	this->txt1.process(this);
+
+	int key_input = 0;
+	while ((key_input = state->inputs.get_ch()) != -1) {
+		if (key_input == '\n') {
+			if (this->list.get_selected_pos() == 0) {
+				state->current_screen = new screen_new();
+			} else {
+				state->current_screen = new screen_survey(this->list.get_selected());
+			}
+
+			delete this;
+		} else if (key_input == 'd' || key_input == 'D') {
+			if(this->list.get_selected_pos() == 0) { 
+				this->txt1.set_alert(this->txt1.from_const(L"* ìƒˆë¡œ ë§Œë“¤ê¸° í•­ëª©ì€ ì‚­ì œí•  ìˆ˜ ì—†ìŠµë‹ˆë‹¤."));
+				printf("\a");
+				return NORMAL;
+			}
+
+			auto filename = this->list.get_selected();
+			auto filename_str = std::wstring(L"./question/").append(filename);
+			std::wstring_convert<std::codecvt_utf8<wchar_t>> myconv;
+
+			if (std::filesystem::remove(myconv.to_bytes(filename_str)) == 0) {
+				this->txt1.set_alert(this->txt1.from_const(L"* ì´ íŒŒì¼ì€ ì‚­ì œí•  ìˆ˜ ì—†ìŠµë‹ˆë‹¤."));
+				printf("\a");
+				return NORMAL;
+			}
+
+			this->list.refresh_list();
+			delete filename;
+		} else if (key_input == 'q' || key_input == 'Q') {
+			state->state = TERMINATE;
+		} else {
+			this->list.keyinput(this, key_input);
+		}
+	}
+}
+void screen_new::switch_to_main_screen(Game* state) {
+	state->inputs.set_mode_getkey();
+	state->current_screen = new screen_opening();
+	delete this;
+
+	clear_stdin();
+}
+void screen_survey::switch_to_main_screen(Game* state) {
+	state->inputs.set_mode_getkey();
+	state->current_screen = new screen_opening();
+	delete this;
+
+	clear_stdin();
+}
+void screen_survey::render(Game* state) {
+	this->menu.render(this);
+	this->menu2.render(this);
+	this->spilter.render(this);
+
+	Screen::render(state);
+	state->inputs.set_mode_echo();
+	this->enter_blocking(state);
+}
+void screen_new::render(Game* state) {
+	this->menu.render(this);
+	this->spilter.render(this);
+
+	Screen::render(state);
+	state->inputs.set_mode_echo();
+	this->enter_blocking(state);
+}
 
 
 int main() {
@@ -287,6 +820,11 @@ int main() {
 		gameInstance.process();
 		gameInstance.render();
 
+		int k = gameInstance.inputs.get_ch();
+		// printf("%d %d", gameInstance.inputs.peek_ch(),  gameInstance.inputs.get_ch());
 		gameInstance.frame_limit(10);
 	}
+
+	gameInstance.inputs.set_mode_echo();
+	system("clear");
 }
