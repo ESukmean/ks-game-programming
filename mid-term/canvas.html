@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Canvas로 주사위 그리기</title>
+</head>
+<body>
+	<canvas style="display: block; width: 720px; height: 400px; margin: 0 auto; border:1px solid #d3d3d3;">
+		canvas를 지원하지 않습니다.
+	</canvas>
+	<script>
+		let cnvs = document.querySelector('canvas');
+		let ctx = cnvs.getContext('2d');	
+		
+		function draw_box(row, col) {
+			ctx.beginPath();
+			ctx.strokeStyle = "black"
+			ctx.rect(20 + (col * 70), 20 + (row * 70), 50, 50);
+			ctx.lineWidth = 2;
+			ctx.stroke();
+		}
+		
+		function draw_dots(row, col, num) {
+			let base_x = 20 + col * 70;
+			let base_y = 20 + row * 70;
+			
+			const draw_dot = (x, y) => {
+				ctx.beginPath();
+				ctx.arc(base_x + x, base_y + y, 3, 0, 2 * Math.PI);
+				ctx.fill();
+				ctx.stroke();
+			};
+
+			switch (num) {
+				case 1:
+					draw_dot(50 / 2, 50 / 2);
+					break;
+
+				case 2:
+				case 3:
+					draw_dot(50 / 4, 50 / 4);
+					draw_dot(50 / 4 * 3, 50 / 4 * 3);
+					if (num == 2) break;
+					draw_dot(50 / 2, 50 / 2);
+					
+					break;
+				case 4:
+				case 5:
+				case 6:
+					draw_dot(50 / 4, 50 / 4);
+					draw_dot(50 / 4, 50 / 4 * 3);
+					draw_dot(50 / 4 * 3, 50 / 4 * 3);
+					draw_dot(50 / 4 * 3, 50 / 4);
+
+					if (num == 5) draw_dot(50 / 2, 50 / 2);
+					if (num == 6) {
+						draw_dot(50 / 4, 50 / 4 * 2);
+						draw_dot(50 / 4 * 3, 50 / 4 * 2);
+					}
+					break;
+				default:
+					break;
+			}
+		}
+
+		function draw_dice(x, y, num) {
+			draw_box(y, x);
+			draw_dots(y, x, num);
+		}
+
+		function play() {
+			ctx.clearRect(0, 0, cnvs.width, cnvs.height);
+			ctx.beginPath();
+
+			let d1 = Math.round(Math.random() * 6) + 1;
+			let d2 = Math.round(Math.random() * 6) + 1;
+			
+			draw_dice(1, 0, d1);
+			draw_dice(2, 0, d2);
+
+			let winboard = [2, 0, 1, 7, 6, 4, 8, 0, 7, 0];
+			let d1_res = winboard.find(e => e == d1);
+			let d2_res = winboard.find(e => e == d2);
+
+			let result = document.getElementById('result');
+			if (d1_res || d2_res) {
+				result.innerHTML = '<b>승리</b> 했습니다.';
+			} else {
+				result.innerHTML = '<b>패배</b> 했습니다.';
+			}
+		}
+
+		window.onload = function() { play(); }
+	</script>
+	<p id="result"></p>
+	<button onclick="play();">다시 굴리기</button>
+</body>
+</html>
