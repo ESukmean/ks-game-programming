@@ -53,8 +53,10 @@
     <UnityVersion>2019.4.33f1</UnityVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Assets\GameManager.cs" />
     <Compile Include="Assets\PlayerMovement3D.cs" />
     <Compile Include="Assets\PlayerTracker.cs" />
+    <Compile Include="Assets\SceneChange.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">

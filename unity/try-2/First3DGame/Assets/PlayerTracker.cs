@@ -13,6 +13,7 @@ public class PlayerTracker : MonoBehaviour
     private string moveAxis = "Mouse ScrollWheel";
     private GameObject ahead;
     private MeshRenderer _renderer;
+    private Vector3 rotateValue;
     public float hideDistance = 1.5f;
     // Start is called before the first frame update
     void Start()
