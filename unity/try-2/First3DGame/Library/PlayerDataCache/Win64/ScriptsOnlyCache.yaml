@@ -51,17 +51,17 @@ ScriptsOnlyBuild:
     - Class: 114
       Script: {instanceID: 11604}
     - Class: 114
-      Script: {instanceID: 12104}
+      Script: {instanceID: 12106}
     - Class: 114
-      Script: {instanceID: 12662}
+      Script: {instanceID: 12664}
     - Class: 114
-      Script: {instanceID: 12696}
+      Script: {instanceID: 12698}
     - Class: 114
-      Script: {instanceID: 13320}
+      Script: {instanceID: 13322}
     - Class: 114
-      Script: {instanceID: 13360}
+      Script: {instanceID: 13362}
     - Class: 114
-      Script: {instanceID: 13794}
+      Script: {instanceID: 13796}
     - Class: 115
       Script: {instanceID: 0}
     - Class: 128
@@ -124,19 +124,19 @@ ScriptsOnlyBuild:
     - Class: 114
       Script: {instanceID: 11764}
     - Class: 114
-      Script: {instanceID: 12036}
+      Script: {instanceID: 11990}
     - Class: 114
-      Script: {instanceID: 12104}
+      Script: {instanceID: 12038}
     - Class: 114
-      Script: {instanceID: 12648}
+      Script: {instanceID: 12106}
     - Class: 114
-      Script: {instanceID: 12662}
+      Script: {instanceID: 12650}
     - Class: 114
-      Script: {instanceID: 13320}
+      Script: {instanceID: 12664}
     - Class: 114
-      Script: {instanceID: 13794}
+      Script: {instanceID: 13322}
     - Class: 114
-      Script: {instanceID: 15612}
+      Script: {instanceID: 13796}
     - Class: 115
       Script: {instanceID: 0}
     - Class: 128
@@ -326,6 +326,12 @@ ScriptsOnlyBuild:
     assemblyName: Unity.Timeline.dll
     namespaceName: UnityEngine.Timeline
     className: AnimationPlayableAsset
+  - hash:
+      serializedVersion: 2
+      Hash: b3d14d43b017a77da047a5a48e125b42
+    assemblyName: Assembly-CSharp.dll
+    namespaceName: 
+    className: TimeTick
   - hash:
       serializedVersion: 2
       Hash: aba7b2852ef61d175dd9602e7723d5e5
@@ -614,12 +620,6 @@ ScriptsOnlyBuild:
     assemblyName: Unity.Timeline.dll
     namespaceName: UnityEngine.Timeline
     className: PlayableTrack
-  - hash:
-      serializedVersion: 2
-      Hash: b3d14d43b017a77da047a5a48e125b42
-    assemblyName: Assembly-CSharp.dll
-    namespaceName: 
-    className: TimeTick
   platform: 19
   scenePathNames:
   - Assets/Scenes/Intro.unity
