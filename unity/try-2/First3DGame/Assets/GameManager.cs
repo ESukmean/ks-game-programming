@@ -7,9 +7,11 @@ public class GameManager : MonoBehaviour
     public GameObject Canvas;
     public GameObject Camera;
     bool Paused = false;
+    public AudioSource audio;
 
     void Start()
     {
+        audio = GameObject.Find("BGM").GetComponent<AudioSource>();
         Canvas.gameObject.SetActive(false);
     }
 
@@ -23,7 +25,7 @@ public class GameManager : MonoBehaviour
                 Canvas.gameObject.SetActive(false);
                 Cursor.visible = false;
                 Screen.lockCursor = true;
-                Camera.GetComponent<AudioSource>().Play();
+                audio.Play();
                 Paused = false;
             }
             else
@@ -33,7 +35,7 @@ public class GameManager : MonoBehaviour
                 
                 Cursor.visible = true;
                 Screen.lockCursor = false;
-                Camera.GetComponent<AudioSource>().Pause();
+                audio.Pause();
                 Paused = true;
             }
         }
@@ -45,5 +47,10 @@ public class GameManager : MonoBehaviour
         Cursor.visible = false;
         Screen.lockCursor = true;
         Camera.GetComponent<AudioSource>().Play();
+    }
+
+    public void exit()
+    {
+        Application.Quit();
     }
 }
